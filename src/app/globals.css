@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Theme tokens. Channels are space-separated RGB so Tailwind's
+ * `<alpha-value>` opacity modifiers work (e.g. `bg-brand/10`).
+ */
+@layer base {
+  :root {
+    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+    /* Brand — Torii-gate vermilion */
+    --brand: 234 88 41; /* #EA5829 */
+    --brand-50: 254 242 237;
+    --brand-100: 253 226 214;
+    --brand-500: 234 88 41;
+    --brand-600: 209 71 28;
+    --brand-700: 173 56 22;
+
+    /* Light theme surfaces */
+    --background: 255 255 255;
+    --surface: 255 255 255;
+    --surface-2: 247 248 250;
+    --border: 229 231 235;
+    --foreground: 17 24 39;
+    --muted: 107 114 128;
+  }
+
+  .dark {
+    /* Dark theme surfaces */
+    --background: 11 15 26; /* deep navy/charcoal */
+    --surface: 17 23 38;
+    --surface-2: 24 31 49;
+    --border: 39 47 67;
+    --foreground: 237 240 247;
+    --muted: 148 158 178;
+  }
+
+  * {
+    border-color: rgb(var(--border));
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: rgb(var(--background));
+    color: rgb(var(--foreground));
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Respect users who prefer reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  .text-gradient-brand {
+    background-image: linear-gradient(
+      90deg,
+      rgb(var(--brand-500)),
+      rgb(var(--brand-700))
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Thin, theme-aware scrollbars for inner scroll regions */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--border)) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    height: 8px;
+    width: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--border));
+    border-radius: 9999px;
+  }
+}
