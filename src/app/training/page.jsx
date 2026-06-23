@@ -18,7 +18,11 @@ export const metadata = {
   },
 };
 
-const VALID_SLUGS = new Set(["ai-ready-engineer", "placement-training"]);
+const VALID_SLUGS = new Set([
+  "ai-ready-engineer",
+  "placement-training-batch-1",
+  "placement-training-batch-2",
+]);
 
 export default function TrainingPage({ searchParams }) {
   const requested = searchParams?.track;

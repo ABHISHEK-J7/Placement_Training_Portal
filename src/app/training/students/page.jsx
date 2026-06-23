@@ -50,7 +50,7 @@ export default function StudentsPage() {
 
       <Container className="py-12">
         {/* Per-batch summary */}
-        <div className="mb-8 grid gap-4 sm:grid-cols-2">
+        <div className="mb-8 grid gap-4 sm:grid-cols-3">
           {allRosters.map((r) => (
             <Card key={r.slug} className="flex items-center justify-between px-5 py-4">
               <div>

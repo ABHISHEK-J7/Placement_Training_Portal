@@ -2,6 +2,11 @@
  * 2027 Batch — 4th Year training programs.
  * Transcribed from the official timetable + day-wise syllabus sheets.
  *
+ * Three cohorts:
+ *   1. AI Ready Engineer
+ *   2. Placement Training Batch 1  (CSE, CSE - AI ML, CSE - DS, ISE)
+ *   3. Placement Training Batch 2  (ECE, CIVIL)
+ *
  * @typedef {Object} TimetableSlot
  * @property {string} time
  * @property {string} activity
@@ -33,12 +38,52 @@
  * @property {SyllabusDay[]} syllabus
  */
 
-const TIME_SLOTS = [
-  "9:00 AM – 11:00 AM",
-  "11:00 AM – 12:00 PM",
-  "12:00 PM – 1:00 PM",
-  "1:00 PM – 2:00 PM",
-  "2:00 PM – 4:00 PM",
+const COMM_SKILLS = "Communication Skills through MyNA";
+
+/** Shared assessment block — same for every cohort. */
+const ASSESSMENTS = [
+  {
+    title: "Pre-Assessment Test",
+    timing: "On Day 1",
+    description:
+      "A baseline test taken on Day 1, before the sessions begin, to gauge each participant's starting level.",
+  },
+  {
+    title: "Daily Test",
+    timing: "8:00 PM – 9:00 PM, every day",
+    description:
+      "An end-of-day assessment that reinforces the day's learning across the tracks.",
+  },
+  {
+    title: "Grand Test",
+    timing: "Day 6 & Day 12",
+    description:
+      "Two milestone tests — Grand Test-1 at the mid-point (Day 6) and Grand Test-2 at the finish (Day 12) — to benchmark cumulative progress.",
+  },
+];
+
+/** Placement Training timetable — identical for Batch 1 and Batch 2. */
+const PLACEMENT_TIMETABLE_SLOTS = [
+  { time: "9:00 AM – 11:00 AM", activity: "Aptitude" },
+  { time: "11:00 AM – 12:00 PM", activity: COMM_SKILLS },
+  { time: "12:00 PM – 1:00 PM", activity: "Lunch" },
+  { time: "1:00 PM – 4:00 PM", activity: "Coding" },
+];
+
+/** Placement Training day-wise syllabus — shared by both batches. */
+const PLACEMENT_SYLLABUS = [
+  { day: 1, aptitude: "Percentages & Ratio-Proportion", coding: "C MCQs" },
+  { day: 2, aptitude: "Profit & Loss", coding: "Pseudo Code MCQs" },
+  { day: 3, aptitude: "Time, Speed & Distance", coding: "Data Structure MCQs" },
+  { day: 4, aptitude: "Time & Work", coding: "OOPs" },
+  { day: 5, aptitude: "Averages & Mixtures", coding: "Problem Solving on Numbers" },
+  { day: 6, aptitude: "Simple & Compound Interest", coding: "Grand Test-1" },
+  { day: 7, aptitude: "Permutations & Combinations", coding: "Problem Solving on Arrays" },
+  { day: 8, aptitude: "Probability", coding: "Problem Solving on Arrays" },
+  { day: 9, aptitude: "Series Completion", coding: "Problem Solving on Strings" },
+  { day: 10, aptitude: "Coding-Decoding", coding: "Problem Solving on Strings" },
+  { day: 11, aptitude: "Direction Sense", coding: "Two Pointer & Sliding Window" },
+  { day: 12, aptitude: "Blood Relations", coding: "Grand Test-2" },
 ];
 
 /** @type {Program[]} */
@@ -46,40 +91,21 @@ export const programs = [
   {
     slug: "ai-ready-engineer",
     title: "AI Ready Engineer",
-    tagline: "4th Year",
+    tagline: "4th Year · Batch 1",
     description:
-      "An intensive Program that blends quantitative aptitude, core coding, and hands-on Artificial Intelligence — taking 4th-year engineers from fundamentals to building and showcasing their own AI-powered application.",
-    tracks: ["Aptitude", "Coding", "AI"],
+      "A 12-day intensive that blends quantitative aptitude, core coding, applied Artificial Intelligence, and communication skills — taking 4th-year engineers from fundamentals to building and showcasing their own AI-powered application.",
+    tracks: ["Aptitude", "Coding", "AI", "Communication Skills"],
     durationDays: 12,
-    assessments: [
-      {
-        title: "Pre-Assessment Test",
-        timing: "On Day 1",
-        description:
-          "A baseline test taken on Day 1, before the sessions begin, to gauge each participant's starting level across the tracks.",
-      },
-      {
-        title: "Daily Test",
-        timing: "8:00 PM – 9:00 PM, every day",
-        description:
-          "An end-of-day assessment that reinforces the day's aptitude, coding, and AI learning.",
-      },
-      {
-        title: "Grand Test",
-        timing: "Day 6 & Day 12",
-        description:
-          "Two milestone tests — Grand Test-1 at the mid-point (Day 6) and Grand Test-2 at the finish (Day 12) — to benchmark cumulative progress.",
-      },
-    ],
+    assessments: ASSESSMENTS,
     timetables: [
       {
         batch: "AI Ready Engineer",
         slots: [
-          { time: TIME_SLOTS[0], activity: "Coding" },
-          { time: TIME_SLOTS[1], activity: "AI" },
-          { time: TIME_SLOTS[2], activity: "Lunch" },
-          { time: TIME_SLOTS[3], activity: "AI" },
-          { time: TIME_SLOTS[4], activity: "Aptitude" },
+          { time: "9:00 AM – 11:00 AM", activity: "Coding" },
+          { time: "11:00 AM – 12:00 PM", activity: "AI" },
+          { time: "12:00 PM – 1:00 PM", activity: "Lunch" },
+          { time: "1:00 PM – 2:00 PM", activity: COMM_SKILLS },
+          { time: "2:00 PM – 4:00 PM", activity: "Aptitude" },
         ],
       },
     ],
@@ -99,59 +125,32 @@ export const programs = [
     ],
   },
   {
-    slug: "placement-training",
-    title: "Placement Training - Phase 1",
-    tagline: "4th Year · Phase 1",
+    slug: "placement-training-batch-1",
+    title: "Placement Training Batch 1",
+    tagline: "4th Year · Batch 1",
     description:
-      "A focused 12-day placement bootcamp combining quantitative & logical aptitude with a deep coding ramp — from C and data structures through arrays, strings, and the two-pointer / sliding-window patterns interviewers love.",
-    tracks: ["Aptitude", "Coding"],
+      "Placement bootcamp for the CSE, CSE (AI & ML), CSE (Data Science), and ISE departments — combining quantitative aptitude, a deep coding ramp, and communication skills (through MyNA).",
+    tracks: ["Aptitude", "Coding", "Communication Skills"],
     durationDays: 12,
-    assessments: [
-      {
-        title: "Pre-Assessment Test",
-        timing: "On Day 1",
-        description:
-          "A baseline test taken on Day 1, before the sessions begin, to gauge each participant's starting level in aptitude and coding.",
-      },
-      {
-        title: "Daily Test",
-        timing: "8:00 PM – 9:00 PM, every day",
-        description:
-          "An end-of-day assessment that reinforces the day's aptitude and coding learning.",
-      },
-      {
-        title: "Grand Test",
-        timing: "Day 6 & Day 12",
-        description:
-          "Two milestone tests — Grand Test-1 at the mid-point (Day 6) and Grand Test-2 at the finish (Day 12) — to benchmark cumulative progress.",
-      },
-    ],
+    assessments: ASSESSMENTS,
     timetables: [
-      {
-        batch: "Placement Training (Phase 1)",
-        slots: [
-          { time: TIME_SLOTS[0], activity: "Aptitude" },
-          { time: TIME_SLOTS[1], activity: "Coding" },
-          { time: TIME_SLOTS[2], activity: "Lunch" },
-          { time: TIME_SLOTS[3], activity: "Coding" },
-          { time: TIME_SLOTS[4], activity: "Coding" },
-        ],
-      },
+      { batch: "Placement Training Batch 1", slots: PLACEMENT_TIMETABLE_SLOTS },
     ],
-    syllabus: [
-      { day: 1, aptitude: "Percentages & Ratio-Proportion", coding: "C MCQs" },
-      { day: 2, aptitude: "Profit & Loss", coding: "Pseudo Code MCQs" },
-      { day: 3, aptitude: "Time, Speed & Distance", coding: "Data Structure MCQs" },
-      { day: 4, aptitude: "Time & Work", coding: "OOPs" },
-      { day: 5, aptitude: "Averages & Mixtures", coding: "Problem Solving on Numbers" },
-      { day: 6, aptitude: "Simple & Compound Interest", coding: "Grand Test-1" },
-      { day: 7, aptitude: "Permutations & Combinations", coding: "Problem Solving on Arrays" },
-      { day: 8, aptitude: "Probability", coding: "Problem Solving on Arrays" },
-      { day: 9, aptitude: "Series Completion", coding: "Problem Solving on Strings" },
-      { day: 10, aptitude: "Coding-Decoding", coding: "Problem Solving on Strings" },
-      { day: 11, aptitude: "Direction Sense", coding: "Two Pointer & Sliding Window" },
-      { day: 12, aptitude: "Blood Relations", coding: "Grand Test-2" },
+    syllabus: PLACEMENT_SYLLABUS,
+  },
+  {
+    slug: "placement-training-batch-2",
+    title: "Placement Training Batch 2",
+    tagline: "4th Year · Batch 2",
+    description:
+      "Placement bootcamp for the ECE and Civil departments — combining quantitative aptitude, a deep coding ramp, and communication skills (through MyNA).",
+    tracks: ["Aptitude", "Coding", "Communication Skills"],
+    durationDays: 12,
+    assessments: ASSESSMENTS,
+    timetables: [
+      { batch: "Placement Training Batch 2", slots: PLACEMENT_TIMETABLE_SLOTS },
     ],
+    syllabus: PLACEMENT_SYLLABUS,
   },
 ];
 

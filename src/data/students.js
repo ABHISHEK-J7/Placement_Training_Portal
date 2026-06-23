@@ -305,16 +305,37 @@ const placementTrainingStudents = [
   { slNo: 169, name: "Yathish Gowda S", usn: "1NC23IS063", branch: "ISE" },
 ];
 
+/**
+ * Placement Training is split into two batches by department:
+ *  - Batch 2 → ECE + CIVIL (51 students)
+ *  - Batch 1 → everyone else: CSE, CSE - AI ML, CSE - DS, ISE (118 students)
+ * Serial numbers are re-sequenced within each batch.
+ */
+const BATCH_2_BRANCHES = new Set(["ECE", "CIVIL"]);
+
+const placementBatch1Students = placementTrainingStudents
+  .filter((s) => !BATCH_2_BRANCHES.has(s.branch))
+  .map((s, i) => ({ ...s, slNo: i + 1 }));
+
+const placementBatch2Students = placementTrainingStudents
+  .filter((s) => BATCH_2_BRANCHES.has(s.branch))
+  .map((s, i) => ({ ...s, slNo: i + 1 }));
+
 export const rosters = {
   "ai-ready-engineer": {
     slug: "ai-ready-engineer",
-    title: "AI Ready Engineer — 2027 Batch",
+    title: "AI Ready Engineer",
     students: aiReadyEngineerStudents,
   },
-  "placement-training": {
-    slug: "placement-training",
-    title: "Placement Training — 2027 Batch",
-    students: placementTrainingStudents,
+  "placement-training-batch-1": {
+    slug: "placement-training-batch-1",
+    title: "Placement Training Batch 1",
+    students: placementBatch1Students,
+  },
+  "placement-training-batch-2": {
+    slug: "placement-training-batch-2",
+    title: "Placement Training Batch 2",
+    students: placementBatch2Students,
   },
 };
 

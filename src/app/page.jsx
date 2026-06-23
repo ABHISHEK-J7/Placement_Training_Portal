@@ -32,12 +32,13 @@ export default function HomePage() {
             </Badge>
             <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-6xl">
               Placement Training{" "}
-              <span className="text-gradient-brand">Phase - 1</span>
+              <span className="text-gradient-brand">Batch 1</span>
             </h1>
             <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-muted">
-              Two intensive tracks — <strong className="text-foreground">AI Ready Engineer</strong>{" "}
-              and <strong className="text-foreground">Placement Training</strong> — blending
-              aptitude, coding, and applied AI to take engineers from trainee to skilled professional.
+              Three cohorts — <strong className="text-foreground">AI Ready Engineer</strong>,{" "}
+              <strong className="text-foreground">Placement Training Batch 1</strong> and{" "}
+              <strong className="text-foreground">Batch 2</strong> — blending aptitude, coding,
+              communication skills, and applied AI to take engineers from trainee to skilled professional.
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
               <Button href="/training" size="lg">
@@ -53,7 +54,7 @@ export default function HomePage() {
 
       {/* Program cards */}
       <Container className="pb-8">
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {programs.map((p) => (
             <Card key={p.slug} interactive className="p-7">
               <Badge tone="neutral">{p.tagline}</Badge>
