@@ -4,7 +4,7 @@
  *
  * Three cohorts:
  *   1. AI Ready Engineer
- *   2. Placement Training Phase 1  (CSE, CSE - AI ML, CSE - DS, ISE)
+ *   2. Placement Training Batch 1  (CSE, CSE - AI ML, CSE - DS, ISE)
  *   3. Placement Training Batch 2  (ECE, CIVIL)
  *
  * @typedef {Object} TimetableSlot
@@ -91,9 +91,9 @@ export const programs = [
   {
     slug: "ai-ready-engineer",
     title: "AI Ready Engineer",
-    tagline: "4th Year · Batch 1",
+    tagline: "4th Year · AI Ready Engineer",
     description:
-      "A 12-day intensive that blends quantitative aptitude, core coding, applied Artificial Intelligence, and communication skills — taking 4th-year engineers from fundamentals to building and showcasing their own AI-powered application.",
+      "An intensive Program that blends quantitative aptitude, core coding, applied Artificial Intelligence, and communication skills — taking 4th-year engineers from fundamentals to building and showcasing their own AI-powered application.",
     tracks: ["Aptitude", "Coding", "AI", "Communication Skills"],
     durationDays: 12,
     assessments: ASSESSMENTS,
@@ -129,7 +129,7 @@ export const programs = [
     title: "Placement Training Batch 1",
     tagline: "4th Year · Batch 1",
     description:
-      "Placement bootcamp for the CSE, CSE (AI & ML), CSE (Data Science), and ISE departments — combining quantitative aptitude, a deep coding ramp, and communication skills (Myna).",
+      "Placement Training for the CSE, CSE (AI & ML), CSE (Data Science), and ISE departments — combining quantitative aptitude, a deep coding ramp, and communication skills (Myna).",
     tracks: ["Aptitude", "Coding", "Communication Skills"],
     durationDays: 12,
     assessments: ASSESSMENTS,
@@ -143,7 +143,7 @@ export const programs = [
     title: "Placement Training Batch 2",
     tagline: "4th Year · Batch 2",
     description:
-      "Placement bootcamp for the ECE and Civil departments — combining quantitative aptitude, a deep coding ramp, and communication skills (Myna).",
+      "Placement Training for the ECE and Civil departments — combining quantitative aptitude, a deep coding ramp, and communication skills (Myna).",
     tracks: ["Aptitude", "Coding", "Communication Skills"],
     durationDays: 12,
     assessments: ASSESSMENTS,

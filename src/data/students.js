@@ -329,7 +329,7 @@ export const rosters = {
   },
   "placement-training-batch-1": {
     slug: "placement-training-batch-1",
-    title: "Placement Training Phase 1",
+    title: "Placement Training Batch 1",
     students: placementBatch1Students,
   },
   "placement-training-batch-2": {
