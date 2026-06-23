@@ -19,7 +19,7 @@ export function Logo({ className }) {
         width={794}
         height={256}
         priority
-        className="h-9 w-auto transition-transform duration-300 group-hover:-translate-y-0.5"
+        className="h-[30px] w-auto transition-transform duration-300 group-hover:-translate-y-0.5"
       />
     </Link>
   );
