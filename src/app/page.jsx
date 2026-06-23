@@ -32,7 +32,7 @@ export default function HomePage() {
             </Badge>
             <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-6xl">
               Placement Training{" "}
-              <span className="text-gradient-brand">Batch 1</span>
+              <span className="text-gradient-brand">Phase 1</span>
             </h1>
             <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-muted">
               Three cohorts — <strong className="text-foreground">AI Ready Engineer</strong>,{" "}
