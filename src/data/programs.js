@@ -38,7 +38,7 @@
  * @property {SyllabusDay[]} syllabus
  */
 
-const COMM_SKILLS = "Communication Skills through MyNA";
+const COMM_SKILLS = "Communication Skills (Myna)";
 
 /** Shared assessment block — same for every cohort. */
 const ASSESSMENTS = [
@@ -126,15 +126,15 @@ export const programs = [
   },
   {
     slug: "placement-training-batch-1",
-    title: "Placement Training Phase 1",
-    tagline: "4th Year · Phase 1",
+    title: "Placement Training Batch 1",
+    tagline: "4th Year · Batch 1",
     description:
-      "Placement bootcamp for the CSE, CSE (AI & ML), CSE (Data Science), and ISE departments — combining quantitative aptitude, a deep coding ramp, and communication skills (through MyNA).",
+      "Placement bootcamp for the CSE, CSE (AI & ML), CSE (Data Science), and ISE departments — combining quantitative aptitude, a deep coding ramp, and communication skills (Myna).",
     tracks: ["Aptitude", "Coding", "Communication Skills"],
     durationDays: 12,
     assessments: ASSESSMENTS,
     timetables: [
-      { batch: "Placement Training Phase 1", slots: PLACEMENT_TIMETABLE_SLOTS },
+      { batch: "Placement Training Batch 1", slots: PLACEMENT_TIMETABLE_SLOTS },
     ],
     syllabus: PLACEMENT_SYLLABUS,
   },
@@ -143,7 +143,7 @@ export const programs = [
     title: "Placement Training Batch 2",
     tagline: "4th Year · Batch 2",
     description:
-      "Placement bootcamp for the ECE and Civil departments — combining quantitative aptitude, a deep coding ramp, and communication skills (through MyNA).",
+      "Placement bootcamp for the ECE and Civil departments — combining quantitative aptitude, a deep coding ramp, and communication skills (Myna).",
     tracks: ["Aptitude", "Coding", "Communication Skills"],
     durationDays: 12,
     assessments: ASSESSMENTS,
