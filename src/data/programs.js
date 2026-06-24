@@ -10,6 +10,7 @@
  * @typedef {Object} TimetableSlot
  * @property {string} time
  * @property {string} activity
+ * @property {string} [trainers]
  *
  * @typedef {Object} Timetable
  * @property {string} batch
@@ -62,12 +63,22 @@ const ASSESSMENTS = [
   },
 ];
 
-/** Placement Training timetable — identical for Batch 1 and Batch 2. */
-const PLACEMENT_TIMETABLE_SLOTS = [
-  { time: "9:00 AM – 11:00 AM", activity: "Aptitude" },
-  { time: "11:00 AM – 12:00 PM", activity: COMM_SKILLS },
-  { time: "12:00 PM – 1:00 PM", activity: "Lunch" },
-  { time: "1:00 PM – 4:00 PM", activity: "Coding" },
+/** Placement Training Batch 1 daily timetable. */
+const PLACEMENT_BATCH1_SLOTS = [
+  { time: "9:00 AM – 9:30 AM", activity: COMM_SKILLS, trainers: "Harshavardhini, Harika" },
+  { time: "9:30 AM – 10:30 AM", activity: "SQL", trainers: "Harshavardhini, Harika" },
+  { time: "10:30 AM – 12:00 PM", activity: "Aptitude", trainers: "Naveen, Karthik" },
+  { time: "12:00 PM – 1:00 PM", activity: "Lunch", trainers: "" },
+  { time: "1:00 PM – 4:00 PM", activity: "Coding", trainers: "Sudhir, Chaitanya, Rahul" },
+];
+
+/** Placement Training Batch 2 daily timetable. */
+const PLACEMENT_BATCH2_SLOTS = [
+  { time: "9:00 AM – 10:30 AM", activity: "Aptitude", trainers: "Naveen, Karthik" },
+  { time: "10:30 AM – 11:00 AM", activity: COMM_SKILLS, trainers: "Abraham, Vinit" },
+  { time: "11:00 AM – 12:00 PM", activity: "SQL", trainers: "Abraham, Vinit" },
+  { time: "12:00 PM – 1:00 PM", activity: "Lunch", trainers: "" },
+  { time: "1:00 PM – 4:00 PM", activity: "Coding", trainers: "Abraham, Vinit" },
 ];
 
 /** Placement Training day-wise syllabus — shared by both batches. */
@@ -94,18 +105,19 @@ export const programs = [
     tagline: "4th Year · AI Ready Engineer",
     description:
       "An intensive Program that blends quantitative aptitude, core coding, applied Artificial Intelligence, and communication skills — taking 4th-year engineers from fundamentals to building and showcasing their own AI-powered application.",
-    tracks: ["Aptitude", "Coding", "AI", "Communication Skills"],
+    tracks: ["Aptitude", "Coding", "AI", "Communication Skills", "SQL"],
     durationDays: 12,
     assessments: ASSESSMENTS,
     timetables: [
       {
         batch: "AI Ready Engineer",
         slots: [
-          { time: "9:00 AM – 11:00 AM", activity: "Coding" },
-          { time: "11:00 AM – 12:00 PM", activity: "AI" },
-          { time: "12:00 PM – 1:00 PM", activity: "Lunch" },
-          { time: "1:00 PM – 2:00 PM", activity: COMM_SKILLS },
-          { time: "2:00 PM – 4:00 PM", activity: "Aptitude" },
+          { time: "9:00 AM – 11:00 AM", activity: "Coding", trainers: "Bhargav, Rahul, Suneeta" },
+          { time: "11:00 AM – 12:00 PM", activity: "AI", trainers: "Abhishek, Azar" },
+          { time: "12:00 PM – 1:00 PM", activity: "Lunch", trainers: "" },
+          { time: "1:00 PM – 1:30 PM", activity: COMM_SKILLS, trainers: "Harshavardhini, Harika" },
+          { time: "1:30 PM – 2:30 PM", activity: "SQL", trainers: "Harshavardhini, Harika" },
+          { time: "2:30 PM – 4:00 PM", activity: "Aptitude", trainers: "Naveen, Karthik" },
         ],
       },
     ],
@@ -130,11 +142,11 @@ export const programs = [
     tagline: "4th Year · Batch 1",
     description:
       "Placement Training for the CSE, CSE (AI & ML), CSE (Data Science), and ISE departments — combining quantitative aptitude, a deep coding ramp, and communication skills (Myna).",
-    tracks: ["Aptitude", "Coding", "Communication Skills"],
+    tracks: ["Aptitude", "Coding", "Communication Skills", "SQL"],
     durationDays: 12,
     assessments: ASSESSMENTS,
     timetables: [
-      { batch: "Placement Training Batch 1", slots: PLACEMENT_TIMETABLE_SLOTS },
+      { batch: "Placement Training Batch 1", slots: PLACEMENT_BATCH1_SLOTS },
     ],
     syllabus: PLACEMENT_SYLLABUS,
   },
@@ -144,11 +156,11 @@ export const programs = [
     tagline: "4th Year · Batch 2",
     description:
       "Placement Training for the ECE and Civil departments — combining quantitative aptitude, a deep coding ramp, and communication skills (Myna).",
-    tracks: ["Aptitude", "Coding", "Communication Skills"],
+    tracks: ["Aptitude", "Coding", "Communication Skills", "SQL"],
     durationDays: 12,
     assessments: ASSESSMENTS,
     timetables: [
-      { batch: "Placement Training Batch 2", slots: PLACEMENT_TIMETABLE_SLOTS },
+      { batch: "Placement Training Batch 2", slots: PLACEMENT_BATCH2_SLOTS },
     ],
     syllabus: PLACEMENT_SYLLABUS,
   },
