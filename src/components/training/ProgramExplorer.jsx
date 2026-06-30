@@ -108,16 +108,34 @@ export function ProgramExplorer({ programs, initialSlug }) {
           <Card className="shrink-0 px-5 py-4">
             <dl className="space-y-2 text-sm">
               {[
-                { label: "Duration", value: `${program.durationDays} days` },
-                { label: "Daily Test", value: "30 min" },
-                { label: "Pre-Assessment", value: "Day 1" },
-                { label: "Grand Test", value: "6th & 12th days" },
-              ].map((fact) => (
-                <div key={fact.label} className="flex items-center justify-between gap-8">
-                  <dt className="text-muted">{fact.label}</dt>
-                  <dd className="font-semibold text-foreground">{fact.value}</dd>
-                </div>
-              ))}
+                program.durationDays
+                  ? { label: "Duration", value: `${program.durationDays} days` }
+                  : null,
+                program.assessments?.length
+                  ? { label: "Daily Test", value: "30 min" }
+                  : null,
+                program.assessments?.length
+                  ? { label: "Pre-Assessment", value: "Day 1" }
+                  : null,
+                program.assessments?.length
+                  ? { label: "Grand Test", value: "6th & 12th days" }
+                  : null,
+                !program.durationDays && !program.assessments?.length
+                  ? {
+                      label: "Classes / day",
+                      value: program.timetables[0]?.slots.filter(
+                        (s) => s.activity.toLowerCase() !== "lunch",
+                      ).length ?? 0,
+                    }
+                  : null,
+              ]
+                .filter(Boolean)
+                .map((fact) => (
+                  <div key={fact.label} className="flex items-center justify-between gap-8">
+                    <dt className="text-muted">{fact.label}</dt>
+                    <dd className="font-semibold text-foreground">{fact.value}</dd>
+                  </div>
+                ))}
             </dl>
           </Card>
         </div>
@@ -133,6 +151,7 @@ export function ProgramExplorer({ programs, initialSlug }) {
         </section>
 
         {/* Syllabus */}
+        {program.syllabus?.length > 0 && (
         <section className="mt-10" aria-label="Day-wise syllabus">
           <div className="mb-4">
             <h3 className="text-lg font-semibold text-foreground">Day-wise Syllabus</h3>
@@ -143,8 +162,10 @@ export function ProgramExplorer({ programs, initialSlug }) {
           </div>
           <SyllabusTable program={program} />
         </section>
+        )}
 
         {/* Assessments */}
+        {program.assessments?.length > 0 && (
         <section className="mt-10" aria-label="Assessments">
           <h3 className="mb-1 text-lg font-semibold text-foreground">Assessments</h3>
           <p className="mb-4 text-sm text-muted">
@@ -174,6 +195,7 @@ export function ProgramExplorer({ programs, initialSlug }) {
             ))}
           </div>
         </section>
+        )}
       </div>
     </div>
   );

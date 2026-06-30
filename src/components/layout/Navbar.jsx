@@ -5,8 +5,29 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Container } from "@/components/ui/Container";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
+
+function LogoutButton({ className }) {
+  const { logout } = useAuth();
+  return (
+    <button
+      type="button"
+      onClick={logout}
+      className={cn(
+        "inline-flex items-center gap-2 rounded-full border border-border px-3.5 py-2 text-sm font-medium text-foreground/80 transition-colors hover:border-brand/50 hover:text-brand",
+        className,
+      )}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M15 12H4m0 0 3.5-3.5M4 12l3.5 3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M10 7V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2v-2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      Logout
+    </button>
+  );
+}
 
 /** Primary nav — the two Training pages as internal routes. */
 const NAV_ITEMS = [
@@ -16,6 +37,7 @@ const NAV_ITEMS = [
 
 export function Navbar() {
   const pathname = usePathname();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -63,7 +85,16 @@ export function Navbar() {
         </nav>
 
         <div className="flex items-center gap-2">
+          {user && (
+            <span
+              className="hidden max-w-[12rem] truncate text-sm text-muted xl:inline"
+              title={user.email}
+            >
+              {user.email}
+            </span>
+          )}
           <ThemeToggle />
+          <LogoutButton className="hidden lg:inline-flex" />
 
           {/* Mobile menu trigger */}
           <button
@@ -112,6 +143,10 @@ export function Navbar() {
                 {item.label}
               </Link>
             ))}
+            <div className="mt-2 border-t border-border pt-3">
+              {user && <p className="px-3 pb-2 text-xs text-muted">{user.email}</p>}
+              <LogoutButton className="w-full justify-center" />
+            </div>
           </Container>
         </div>
       )}

@@ -1,7 +1,8 @@
 import "./globals.css";
 import { ThemeProvider, themeInitScript } from "@/components/layout/ThemeProvider";
-import { Navbar } from "@/components/layout/Navbar";
-import { Footer } from "@/components/layout/Footer";
+import { AuthProvider } from "@/components/auth/AuthProvider";
+import { FeedbackProvider } from "@/components/feedback/FeedbackProvider";
+import { AppShell } from "@/components/layout/AppShell";
 
 const SITE_NAME = "Torii Minds";
 const SITE_URL = "https://toriiminds.com";
@@ -53,15 +54,11 @@ export default function RootLayout({ children }) {
       </head>
       <body className="min-h-dvh antialiased">
         <ThemeProvider>
-          <a
-            href="#main"
-            className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-brand focus:px-4 focus:py-2 focus:text-white"
-          >
-            Skip to content
-          </a>
-          <Navbar />
-          <main id="main">{children}</main>
-          <Footer />
+          <AuthProvider>
+            <FeedbackProvider>
+              <AppShell>{children}</AppShell>
+            </FeedbackProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

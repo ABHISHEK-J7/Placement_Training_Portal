@@ -1,18 +1,29 @@
 import { Card } from "@/components/ui/Card";
 
+/** Maps a program track to its syllabus row field. */
+const FIELD_BY_TRACK = {
+  Aptitude: "aptitude",
+  Coding: "coding",
+  AI: "ai",
+  "Communication Skills": "commSkills",
+  SQL: "sql",
+};
+
 /**
- * Day-wise syllabus. Renders an accessible table on larger screens and a
- * stacked card list on mobile. The AI column appears only when the program
- * includes an AI track.
+ * Day-wise syllabus. Columns are derived from the program's tracks, so each
+ * program shows exactly the subjects it teaches (Aptitude, Coding, AI,
+ * Communication Skills, SQL …).
  */
 export function SyllabusTable({ program }) {
-  const hasAi = program.tracks.includes("AI");
+  const columns = program.tracks
+    .filter((t) => FIELD_BY_TRACK[t])
+    .map((t) => ({ label: t, field: FIELD_BY_TRACK[t] }));
 
   return (
     <Card className="overflow-hidden">
       {/* Desktop / tablet table */}
       <div className="hidden overflow-x-auto scrollbar-thin md:block">
-        <table className="w-full border-collapse text-sm">
+        <table className="w-full min-w-[640px] border-collapse text-sm">
           <caption className="sr-only">
             {program.title} day-wise syllabus across {program.durationDays} days
           </caption>
@@ -21,17 +32,11 @@ export function SyllabusTable({ program }) {
               <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">
                 Day
               </th>
-              <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">
-                Aptitude
-              </th>
-              <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">
-                Coding
-              </th>
-              {hasAi && (
-                <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">
-                  AI
+              {columns.map((c) => (
+                <th key={c.field} scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">
+                  {c.label}
                 </th>
-              )}
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -40,9 +45,11 @@ export function SyllabusTable({ program }) {
                 <th scope="row" className="whitespace-nowrap px-4 py-3 text-left font-semibold text-brand">
                   Day {row.day}
                 </th>
-                <td className="px-4 py-3 text-foreground/90">{row.aptitude}</td>
-                <td className="px-4 py-3 text-foreground/90">{row.coding}</td>
-                {hasAi && <td className="px-4 py-3 text-foreground/90">{row.ai}</td>}
+                {columns.map((c) => (
+                  <td key={c.field} className="px-4 py-3 text-foreground/90">
+                    {row[c.field] || "—"}
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
@@ -55,20 +62,12 @@ export function SyllabusTable({ program }) {
           <li key={row.day} className="px-4 py-4">
             <p className="text-sm font-semibold text-brand">Day {row.day}</p>
             <dl className="mt-2 space-y-1.5 text-sm">
-              <div className="flex gap-2">
-                <dt className="w-20 shrink-0 text-muted">Aptitude</dt>
-                <dd className="text-foreground/90">{row.aptitude}</dd>
-              </div>
-              <div className="flex gap-2">
-                <dt className="w-20 shrink-0 text-muted">Coding</dt>
-                <dd className="text-foreground/90">{row.coding}</dd>
-              </div>
-              {hasAi && (
-                <div className="flex gap-2">
-                  <dt className="w-20 shrink-0 text-muted">AI</dt>
-                  <dd className="text-foreground/90">{row.ai}</dd>
+              {columns.map((c) => (
+                <div key={c.field} className="flex gap-2">
+                  <dt className="w-28 shrink-0 text-muted">{c.label}</dt>
+                  <dd className="text-foreground/90">{row[c.field] || "—"}</dd>
                 </div>
-              )}
+              ))}
             </dl>
           </li>
         ))}

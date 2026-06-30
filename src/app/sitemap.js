@@ -1,10 +1,10 @@
-const BASE_URL = "https://toriiminds.com";
+const BASE_URL = "https://toriiminds.com/placement-trainings";
 
 export default function sitemap() {
-  const routes = ["/", "/training", "/training/students"];
+  const routes = ["/login"];
   return routes.map((path) => ({
     url: `${BASE_URL}${path}`,
-    changeFrequency: "weekly",
-    priority: path === "/" ? 1 : 0.8,
+    changeFrequency: "monthly",
+    priority: 0.5,
   }));
 }

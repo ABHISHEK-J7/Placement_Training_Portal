@@ -12,6 +12,10 @@ function activityTone(activity) {
   if (a === "ai") return "bg-brand/10 text-brand ring-1 ring-inset ring-brand/20";
   if (a === "coding") return "bg-emerald-500/10 text-emerald-600 ring-1 ring-inset ring-emerald-500/20 dark:text-emerald-400";
   if (a === "aptitude") return "bg-sky-500/10 text-sky-600 ring-1 ring-inset ring-sky-500/20 dark:text-sky-400";
+  if (a === "softskills" || a === "soft skills")
+    return "bg-pink-500/10 text-pink-600 ring-1 ring-inset ring-pink-500/20 dark:text-pink-400";
+  if (a === "technical training")
+    return "bg-teal-500/10 text-teal-600 ring-1 ring-inset ring-teal-500/20 dark:text-teal-400";
   return "bg-surface-2 text-foreground";
 }
 
