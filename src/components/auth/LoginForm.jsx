@@ -105,8 +105,7 @@ export function LoginForm() {
           </form>
 
           <p className="mt-4 rounded-lg bg-surface-2 px-3 py-2 text-center text-xs text-muted">
-            Admin demo — Username <span className="font-semibold text-foreground">Admin@Torii</span>{" "}
-            · Password <span className="font-semibold text-foreground">Admin@Torii</span>
+            For Login Contact Torii
           </p>
         </Card>
 
