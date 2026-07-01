@@ -1,12 +1,12 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { apiGet } from "@/lib/apiClient";
-import { roleLabel, seesAllStudents } from "@/lib/roles";
+import { apiGet, apiPost } from "@/lib/apiClient";
+import { roleLabel, seesAllStudents, sameDept } from "@/lib/roles";
 import { parseDateTime, levelLabel, typeLabel } from "@/lib/assessments";
 import { cn } from "@/lib/utils";
 
@@ -31,40 +31,53 @@ const LEVEL_TONE = {
 
 export default function AssessmentsPage() {
   const { user } = useAuth();
-  const router = useRouter();
 
   const [mode, setMode] = useState("daily"); // "daily" | "grand"
   const [list, setList] = useState([]);
   const [directory, setDirectory] = useState([]);
+  const [attend, setAttend] = useState({}); // id -> branches[] of attendees
   const [loaded, setLoaded] = useState(false);
+  const [countsLoaded, setCountsLoaded] = useState(false);
   const [error, setError] = useState("");
 
-  const [query, setQuery] = useState("");
   const [batchF, setBatchF] = useState("all");
   const [deptF, setDeptF] = useState("all");
 
-  // Directory once.
   useEffect(() => {
     apiGet("/students").then((d) => setDirectory(d.students || [])).catch(() => setDirectory([]));
   }, []);
 
-  // Catalog whenever the toggle changes.
+  // Catalog + per-assessment attendee counts, refetched whenever the toggle changes.
   useEffect(() => {
     let cancel = false;
-    setLoaded(false);
-    setError("");
-    apiGet(`/assessments?type=${mode}`)
-      .then((d) => { if (!cancel) setList(d.assessments || []); })
-      .catch((e) => { if (!cancel) setError(e.message || "Could not load assessments."); })
-      .finally(() => { if (!cancel) setLoaded(true); });
+    setLoaded(false); setCountsLoaded(false); setError(""); setAttend({});
+    (async () => {
+      let items = [];
+      try {
+        items = (await apiGet(`/assessments?type=${mode}`)).assessments || [];
+      } catch (e) {
+        if (!cancel) { setError(e.message || "Could not load assessments."); setLoaded(true); setCountsLoaded(true); }
+        return;
+      }
+      if (cancel) return;
+      setList(items); setLoaded(true);
+      // Attendee counts from the results API (one call per assessment).
+      const inScope = items.filter((a) => a.batchList?.some((b) => ALLOWED.has(b)));
+      const map = {};
+      await Promise.all(inScope.map(async (a) => {
+        try {
+          const d = await apiPost("/assessments/details", { assessment: a.id, type: mode });
+          map[a.id] = (d.result || []).map((r) => (Array.isArray(r.branch) ? r.branch[0] : r.branch) || "");
+        } catch { map[a.id] = []; }
+      }));
+      if (!cancel) { setAttend(map); setCountsLoaded(true); }
+    })();
     return () => { cancel = true; };
   }, [mode]);
 
   const seesAll = user ? seesAllStudents(user) : false;
-
   const inScope = useMemo(() => list.filter((a) => a.batchList?.some((b) => ALLOWED.has(b))), [list]);
 
-  // batch → set of departments (from the directory).
   const batchDepts = useMemo(() => {
     const m = new Map();
     for (const s of directory) {
@@ -83,27 +96,24 @@ export default function AssessmentsPage() {
   }, [batchDepts, seesAll, user]);
 
   const effDept = seesAll ? deptF : user?.department || "all";
-
-  const batchOptions = useMemo(
-    () => ALLOWED_BATCHES.filter((b) => inScope.some((a) => a.batchList.includes(b))),
-    [inScope],
-  );
+  const batchOptions = useMemo(() => ALLOWED_BATCHES.filter((b) => inScope.some((a) => a.batchList.includes(b))), [inScope]);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
     return inScope
       .filter((a) => (batchF === "all" ? true : a.batchList.includes(batchF)))
-      .filter((a) => (effDept === "all" ? true : a.batchList.some((b) => batchDepts.get(b)?.has(effDept))))
-      .filter((a) =>
-        q === "" ? true : `${a.title} ${a.topic} ${a.module} ${a.technology}`.toLowerCase().includes(q),
-      )
+      .filter((a) => (effDept === "all" ? true : a.batchList.some((b) => { const set = batchDepts.get(b); return set && [...set].some((d) => sameDept(d, effDept)); })))
       .sort((a, b) => parseDateTime(b.start).ts - parseDateTime(a.start).ts);
-  }, [inScope, batchF, effDept, query, batchDepts]);
+  }, [inScope, batchF, effDept, batchDepts]);
 
-  const anyFilter = batchF !== "all" || (seesAll && deptF !== "all") || query !== "";
-  const resetFilters = () => { setQuery(""); setBatchF("all"); setDeptF("all"); };
-  const switchMode = (m) => { if (m === mode) return; setMode(m); setBatchF("all"); setQuery(""); };
+  // Attendee count per assessment, scoped for HODs.
+  const attendedCount = (id) => {
+    const branches = attend[id];
+    if (!branches) return null; // still loading
+    return effDept === "all" ? branches.length : branches.filter((b) => sameDept(b, effDept)).length;
+  };
 
+  const anyFilter = batchF !== "all" || (seesAll && deptF !== "all");
+  const switchMode = (m) => { if (m === mode) return; setMode(m); setBatchF("all"); };
   const isGrand = mode === "grand";
 
   if (!user) return null;
@@ -114,7 +124,7 @@ export default function AssessmentsPage() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-foreground">Assessments</h2>
           <p className="mt-1 text-sm text-muted">
-            {loaded ? `${filtered.length} ${isGrand ? "grand" : "daily"} assessment${filtered.length === 1 ? "" : "s"}` : "Loading…"} · click one to see who attended &amp; their results.
+            {loaded ? `${filtered.length} ${isGrand ? "grand" : "daily"} test${filtered.length === 1 ? "" : "s"}` : "Loading…"} · open a card for full results.
           </p>
         </div>
         <Badge tone="brand">{seesAll ? roleLabel(user.role) : user.department}</Badge>
@@ -122,14 +132,14 @@ export default function AssessmentsPage() {
 
       {/* Daily / Grand toggle */}
       <div className="inline-flex rounded-full border border-border bg-surface-2 p-1">
-        {[["daily", "Daily Assessments"], ["grand", "Grand Assessments"]].map(([m, label]) => (
+        {[["daily", "Daily Test"], ["grand", "Grand Test"]].map(([m, label]) => (
           <button
             key={m}
             type="button"
             onClick={() => switchMode(m)}
             aria-pressed={mode === m}
             className={cn(
-              "rounded-full px-5 py-2 text-sm font-semibold transition-colors",
+              "rounded-full px-6 py-2 text-sm font-semibold transition-colors",
               mode === m ? "bg-brand text-white shadow-sm" : "text-muted hover:text-foreground",
             )}
           >
@@ -138,8 +148,8 @@ export default function AssessmentsPage() {
         ))}
       </div>
 
-      {/* Filters: Department + Batch + search */}
-      <Card className="flex flex-wrap items-center gap-3 p-4">
+      {/* Department + Batch filters */}
+      <div className="flex flex-wrap items-center gap-3">
         {seesAll ? (
           <select className={FIELD} value={deptF} onChange={(e) => setDeptF(e.target.value)} aria-label="Department">
             <option value="all">All departments</option>
@@ -152,14 +162,8 @@ export default function AssessmentsPage() {
           <option value="all">All batches</option>
           {batchOptions.map((b) => <option key={b} value={b}>{b}</option>)}
         </select>
-        <div className="relative max-w-xs flex-1">
-          <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted">
-            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" /><path d="m20 20-3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search…" className="h-10 w-full rounded-full border border-border bg-surface pl-10 pr-4 text-sm text-foreground placeholder:text-muted focus:border-brand/50 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-        </div>
-        {anyFilter && <button type="button" onClick={resetFilters} className="text-sm font-medium text-brand hover:underline">Reset</button>}
-      </Card>
+        {anyFilter && <button type="button" onClick={() => { setBatchF("all"); setDeptF("all"); }} className="text-sm font-medium text-brand hover:underline">Reset</button>}
+      </div>
 
       {!loaded ? (
         <Card className="grid place-items-center py-16"><div className="h-8 w-8 animate-spin rounded-full border-2 border-border border-t-brand" /></Card>
@@ -167,46 +171,53 @@ export default function AssessmentsPage() {
         <Card className="px-6 py-16 text-center"><h3 className="text-base font-semibold text-foreground">Couldn’t load assessments</h3><p className="mx-auto mt-1 max-w-md text-sm text-muted">{error}</p></Card>
       ) : filtered.length === 0 ? (
         <Card className="px-6 py-16 text-center">
-          <h3 className="text-base font-semibold text-foreground">No {isGrand ? "grand" : "daily"} assessments to show</h3>
+          <h3 className="text-base font-semibold text-foreground">No {isGrand ? "grand" : "daily"} tests to show</h3>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted">
             {inScope.length === 0
-              ? `No ${isGrand ? "grand" : "daily"} assessments have been published for PT_AI_READY_2027, PT_IT_2027 or PT_NON_IT_2027 yet.`
-              : "No assessments match the current Department / Batch selection."}
+              ? `No ${isGrand ? "grand" : "daily"} tests have been published for the placement batches yet.`
+              : "No tests match the current Department / Batch selection."}
           </p>
         </Card>
       ) : (
-        <Card className="overflow-hidden">
-          <div className="max-h-[72vh] overflow-auto scrollbar-thin">
-            <table className="w-full min-w-[820px] border-collapse text-sm">
-              <thead>
-                <tr className="text-left">
-                  {["#", isGrand ? "Assessment" : "Topic", isGrand ? "Topics" : "Module", "Technology", "Batch", "Level", "Type", "Qs", "Date"].map((h, i) => (
-                    <th key={h} className={cn("sticky top-0 z-10 bg-surface-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted", i === 7 && "text-center")}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filtered.map((a, i) => (
-                  <tr key={a.id} onClick={() => router.push(`/assessments/${a.id}?type=${mode}`)} className="cursor-pointer transition-colors hover:bg-surface-2/60">
-                    <td className="px-4 py-3 text-muted">{i + 1}</td>
-                    <td className="px-4 py-3 font-medium text-foreground">{a.title}</td>
-                    <td className="px-4 py-3 text-muted">{a.isGrand ? `${a.topicCount} topics` : a.module}</td>
-                    <td className="px-4 py-3 text-foreground/80">{a.technology}</td>
-                    <td className="px-4 py-3">
-                      {a.batchList.length > 1
-                        ? <span className="text-xs text-foreground/80">{a.batchList.join(", ")}</span>
-                        : <Badge tone="neutral">{a.batch}</Badge>}
-                    </td>
-                    <td className={cn("px-4 py-3 font-medium capitalize", LEVEL_TONE[a.level] || "text-muted")}>{levelLabel(a.level)}</td>
-                    <td className="px-4 py-3"><span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", TYPE_TONE[a.testType] || "bg-surface-2 text-muted")}>{typeLabel(a.testType)}</span></td>
-                    <td className="px-4 py-3 text-center text-muted">{a.questions || "—"}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-muted">{parseDateTime(a.start).dateLabel || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((a) => {
+            const count = attendedCount(a.id);
+            return (
+              <Link key={a.id} href={`/assessments/${a.id}?type=${mode}`}>
+                <Card interactive className="flex h-full flex-col overflow-hidden">
+                  <div className="flex items-start justify-between gap-3 bg-gradient-to-r from-brand/10 to-transparent px-5 py-4">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", TYPE_TONE[a.testType] || "bg-surface-2 text-muted")}>{typeLabel(a.testType)}</span>
+                        <span className={cn("text-xs font-medium capitalize", LEVEL_TONE[a.level] || "text-muted")}>{levelLabel(a.level)}</span>
+                      </div>
+                      <h3 className="mt-1.5 truncate font-semibold text-foreground">{a.title}</h3>
+                      <p className="truncate text-xs text-muted">{a.technology}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-2xl font-bold leading-none text-foreground">{count == null ? "…" : count}</p>
+                      <p className="mt-1 text-[11px] font-medium uppercase tracking-wide text-muted">attended</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-1 flex-col gap-2.5 px-5 pb-5 pt-3">
+                    <div className="flex flex-wrap gap-1.5">
+                      {a.batchList.map((b) => <Badge key={b} tone="neutral">{b}</Badge>)}
+                    </div>
+                    <p className="text-xs text-muted">
+                      {a.isGrand ? `${a.topicCount} topics` : a.module} · {a.questions} questions{a.isGrand && a.duration ? ` · ${a.duration} min` : ""}
+                    </p>
+                    <p className="text-xs text-muted">{parseDateTime(a.start).dateLabel || "—"}</p>
+                    <p className="mt-auto pt-2 text-sm font-medium text-brand">View results →</p>
+                  </div>
+                </Card>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+
+      {loaded && filtered.length > 0 && !countsLoaded && (
+        <p className="text-center text-xs text-muted">Loading attendance counts…</p>
       )}
     </div>
   );

@@ -12,6 +12,8 @@
  * test type/college/time). Per-assessment results drive the score analytics.
  */
 
+import { sameDept } from "@/lib/roles";
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /**
@@ -130,7 +132,7 @@ export function accuracy(r) {
 export function scopeResults(user, rows, seesAll) {
   if (!user) return [];
   if (seesAll) return rows;
-  return rows.filter((r) => studentBranch(r) === user.department);
+  return rows.filter((r) => sameDept(studentBranch(r), user.department));
 }
 
 /** Enrich a result row with directory USN/name (joined by Torii number = roll_no). */

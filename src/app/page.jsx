@@ -17,8 +17,10 @@ import {
   attendanceByDepartment,
 } from "@/lib/attendanceData";
 import { feedbackOverview, scopeFeedback } from "@/lib/feedback";
-import { seesAllStudents, roleLabel, canManageUsers } from "@/lib/roles";
+import { seesAllStudents, roleLabel, canManageUsers, sameDept } from "@/lib/roles";
 import { cn } from "@/lib/utils";
+
+const ALLOWED = new Set(["PT_AI_READY_2027", "PT_IT_2027", "PT_NON_IT_2027"]);
 
 const icon = {
   users: <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-3.3 0-8 1.7-8 5v3h16v-3c0-3.3-4.7-5-8-5Z" />,
@@ -63,6 +65,9 @@ export default function DashboardPage() {
   const [directory, setDirectory] = useState([]);
   const [attRows, setAttRows] = useState(null);
   const [attLoading, setAttLoading] = useState(true);
+  const [daily, setDaily] = useState([]);
+  const [grand, setGrand] = useState([]);
+  const [apiBatches, setApiBatches] = useState([]);
 
   // Load directory + attendance (all allowed batches) once.
   useEffect(() => {
@@ -72,8 +77,12 @@ export default function DashboardPage() {
         const dir = (await apiGet("/students")).students || [];
         if (cancel) return;
         setDirectory(dir);
+        // Assessments (daily + grand) — independent of attendance.
+        apiGet("/assessments?type=daily").then((r) => { if (!cancel) setDaily(r.assessments || []); }).catch(() => {});
+        apiGet("/assessments?type=grand").then((r) => { if (!cancel) setGrand(r.assessments || []); }).catch(() => {});
         const dm = directoryMap(dir);
-        const batches = (await apiGet("/attendance/batches")).batches || [];
+        const batches = (await apiGet("/batches")).batches || [];
+        if (!cancel) setApiBatches(batches);
         const all = [];
         for (const b of batches) {
           try {
@@ -102,11 +111,25 @@ export default function DashboardPage() {
 
   const students = useMemo(() => {
     if (!user) return [];
-    return all ? directory : directory.filter((s) => s.department === user.department);
+    return all ? directory : directory.filter((s) => sameDept(s.department, user.department));
   }, [directory, user, all]);
 
-  const byDept = useMemo(() => groupCount(students, (s) => s.department), [students]);
-  const byBatch = useMemo(() => groupCount(students, (s) => s.batch), [students]);
+  const deptGroups = useMemo(() => groupCount(students, (s) => s.department), [students]);
+  // All-access batch counts come from the live/persisted API roster; HOD from the directory.
+  const byBatch = useMemo(() => {
+    if (all && apiBatches.length) return apiBatches.map((b) => [b.name, b.studentCount || 0]).sort((a, c) => c[1] - a[1]);
+    return groupCount(students, (s) => s.batch);
+  }, [all, apiBatches, students]);
+  const totalStudents = useMemo(
+    () => (all && apiBatches.length ? apiBatches.reduce((s, b) => s + (b.studentCount || 0), 0) : students.length),
+    [all, apiBatches, students],
+  );
+  // Students-by-department totals the live roster: roster students not yet in the
+  // directory (no department) fall into "Unknown" so the chart sums to the headcount.
+  const byDept = useMemo(() => {
+    const unknown = all ? Math.max(0, totalStudents - students.length) : 0;
+    return unknown > 0 ? [...deptGroups, ["Unknown", unknown]] : deptGroups;
+  }, [deptGroups, all, totalStudents, students]);
 
   const matrix = useMemo(() => {
     const depts = [];
@@ -141,6 +164,19 @@ export default function DashboardPage() {
   const fb = useMemo(() => scopeFeedback(user, records), [user, records]);
   const fbOv = useMemo(() => feedbackOverview(fb), [fb]);
 
+  // Assessments (in-scope to the 3 placement batches).
+  const dailyIn = useMemo(() => daily.filter((a) => a.batchList?.some((b) => ALLOWED.has(b))), [daily]);
+  const grandIn = useMemo(() => grand.filter((a) => a.batchList?.some((b) => ALLOWED.has(b))), [grand]);
+  const asmtAll = useMemo(() => [...dailyIn, ...grandIn], [dailyIn, grandIn]);
+  const asmtByBatch = useMemo(() => {
+    const m = new Map();
+    for (const a of asmtAll) for (const b of a.batchList || []) if (ALLOWED.has(b)) m.set(b, (m.get(b) || 0) + 1);
+    return [...m.entries()].sort((x, y) => y[1] - x[1]);
+  }, [asmtAll]);
+  const asmtByTech = useMemo(() => groupCount(asmtAll, (a) => a.technology), [asmtAll]);
+  const asmtTechCount = useMemo(() => new Set(asmtAll.map((a) => a.technology)).size, [asmtAll]);
+  const asmtQuestions = useMemo(() => asmtAll.reduce((s, a) => s + (a.questions || 0), 0), [asmtAll]);
+
   if (!user) return null;
 
   return (
@@ -159,9 +195,9 @@ export default function DashboardPage() {
 
       {/* Top KPIs */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Students" value={students.length} hint={all ? "In directory" : `In ${user.department}`} icon={<Icon d={icon.users} />} />
-        <StatCard label="Departments" value={byDept.length} hint="Represented" icon={<Icon d={icon.building} />} />
-        <StatCard label="Batches" value={byBatch.length} hint="With students" icon={<Icon d={icon.batches} />} />
+        <StatCard label="Students" value={totalStudents} hint={all ? "Live roster" : `In ${user.department}`} icon={<Icon d={icon.users} />} />
+        <StatCard label="Departments" value={deptGroups.length} hint="Represented" icon={<Icon d={icon.building} />} />
+        <StatCard label="Batches" value={byBatch.length} hint="Placement cohorts" icon={<Icon d={icon.batches} />} />
         <StatCard
           label={canManageUsers(user) ? "Portal Users" : "Feedback"}
           value={canManageUsers(user) ? users.length : fbOv.responses}
@@ -265,6 +301,30 @@ export default function DashboardPage() {
                   ) : (
                     <DonutChart title="Attendance distribution" data={attBuckets(att)} />
                   )}
+                </div>
+              </>
+            )}
+          </section>
+
+          {/* Assessments */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-foreground">Assessments</h3>
+              <Button href="/assessments" variant="secondary" size="sm">Open assessments →</Button>
+            </div>
+            {asmtAll.length === 0 ? (
+              <Card className="px-6 py-10 text-center text-sm text-muted">No assessments published for these batches yet.</Card>
+            ) : (
+              <>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <StatCard label="Daily Tests" value={dailyIn.length} hint="Placement batches" icon={<Icon d={icon.check} />} />
+                  <StatCard label="Grand Tests" value={grandIn.length} hint="Comprehensive" />
+                  <StatCard label="Technologies" value={asmtTechCount} hint="Covered" />
+                  <StatCard label="Questions" value={asmtQuestions} hint="Total set" />
+                </div>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <BarList title="Assessments by batch" data={asmtByBatch} />
+                  <DonutChart title="Assessments by technology" data={asmtByTech} />
                 </div>
               </>
             )}

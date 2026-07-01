@@ -7,13 +7,17 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { StatCard } from "@/components/dashboard/charts";
+import { StatCard, DonutChart, BarList } from "@/components/dashboard/charts";
 import { apiGet, apiPost } from "@/lib/apiClient";
 import { directoryMap } from "@/lib/attendanceData";
-import { seesAllStudents, roleLabel } from "@/lib/roles";
+import { seesAllStudents, roleLabel, sameDept } from "@/lib/roles";
 import {
   enrichResults,
   resultStats,
+  scoreDistribution,
+  accuracyDistribution,
+  byBranch,
+  topPerformers,
   parseDateTime,
   levelLabel,
   typeLabel,
@@ -36,12 +40,12 @@ export default function AssessmentDetailPage() {
   const { id } = useParams();
   const { user } = useAuth();
 
-  // "daily" | "grand" — carried from the catalog via ?type=
-  const [type] = useState(() => {
-    if (typeof window === "undefined") return "daily";
-    return new URLSearchParams(window.location.search).get("type") === "grand" ? "grand" : "daily";
-  });
-  const isGrand = type === "grand";
+  // "daily" | "grand" — resolved from whichever catalog actually contains this id
+  // (the ?type= hint is only the initial guess so the header isn't blank on load).
+  const [resolvedType, setResolvedType] = useState(
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("type") === "grand" ? "grand" : "daily",
+  );
+  const isGrand = resolvedType === "grand";
 
   const [meta, setMeta] = useState(null);
   const [rawRows, setRawRows] = useState(null);
@@ -57,15 +61,22 @@ export default function AssessmentDetailPage() {
     (async () => {
       setLoading(true);
       try {
-        const [cat, det, dir] = await Promise.all([
-          apiGet(`/assessments?type=${type}`).catch(() => ({ assessments: [] })),
-          apiPost("/assessments/details", { assessment: id, type }),
-          apiGet("/students").catch(() => ({ students: [] })),
+        // Look this id up in BOTH catalogs so we call the right results endpoint
+        // even if the ?type= hint is missing or wrong.
+        const [dailyCat, grandCat, dir] = await Promise.all([
+          apiGet("/assessments?type=daily").then((r) => r.assessments || []).catch(() => []),
+          apiGet("/assessments?type=grand").then((r) => r.assessments || []).catch(() => []),
+          apiGet("/students").then((r) => r.students || []).catch(() => []),
         ]);
         if (cancel) return;
-        setMeta((cat.assessments || []).find((a) => a.id === id) || null);
-        setRawRows(det.result || []);
-        setDirectory(dir.students || []);
+        const grandMeta = grandCat.find((a) => a.id === id);
+        const dailyMeta = dailyCat.find((a) => a.id === id);
+        const kind = grandMeta ? "grand" : "daily";
+        setResolvedType(kind);
+        setMeta(grandMeta || dailyMeta || null);
+        setDirectory(dir);
+        const det = await apiPost("/assessments/details", { assessment: id, type: kind });
+        if (!cancel) setRawRows(det.result || []);
       } catch (e) {
         if (!cancel) setError(e.message || "Could not load assessment results.");
       } finally {
@@ -73,14 +84,14 @@ export default function AssessmentDetailPage() {
       }
     })();
     return () => { cancel = true; };
-  }, [id, type]);
+  }, [id]);
 
   const seesAll = user ? seesAllStudents(user) : false;
   const dirMap = useMemo(() => directoryMap(directory), [directory]);
 
   const allRows = useMemo(() => (rawRows ? enrichResults(rawRows, dirMap) : []), [rawRows, dirMap]);
   const scoped = useMemo(
-    () => (seesAll ? allRows : allRows.filter((r) => r.branch === user?.department)),
+    () => (seesAll ? allRows : allRows.filter((r) => sameDept(r.branch, user?.department))),
     [allRows, seesAll, user],
   );
 
@@ -99,6 +110,15 @@ export default function AssessmentDetailPage() {
   }, [scoped, query, sort]);
 
   const stats = useMemo(() => resultStats(scoped, meta?.questions), [scoped, meta]);
+  const scoreDist = useMemo(() => scoreDistribution(scoped), [scoped]);
+  const accDist = useMemo(() => accuracyDistribution(scoped), [scoped]);
+  const branches = useMemo(() => byBranch(scoped), [scoped]);
+  const top = useMemo(() => topPerformers(scoped, 5), [scoped]);
+  const totals = useMemo(
+    () => scoped.reduce((a, r) => ({ correct: a.correct + r.correct, wrong: a.wrong + r.wrong }), { correct: 0, wrong: 0 }),
+    [scoped],
+  );
+  const branchLabel = isGrand ? "branch" : "department";
 
   const onDownload = async () => {
     setDownloading(true);
@@ -164,6 +184,66 @@ export default function AssessmentDetailPage() {
             <StatCard label="Pass Rate" value={`${stats.passRate}%`} hint={`${stats.passCount} ≥ 40% correct`} />
             <StatCard label="Avg Time" value={fmtTime(stats.avgTime)} hint="Per student" />
           </div>
+
+          {/* Score analytics */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <BarList title="Score distribution" data={scoreDist} />
+            <DonutChart title="Accuracy distribution" data={accDist} />
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {branches.length > 1 ? (
+              <BarList title={`Average score by ${branchLabel}`} data={branches.map((b) => [b.branch, b.avgScore])} />
+            ) : (
+              <DonutChart title="Correct vs wrong answers" data={[["Correct", totals.correct], ["Wrong", totals.wrong]]} />
+            )}
+            <Card className="p-5">
+              <h3 className="text-sm font-semibold text-foreground">Top performers</h3>
+              <ul className="mt-4 space-y-2.5">
+                {top.map((r, i) => (
+                  <li key={r.torii} className="flex items-center gap-3">
+                    <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold", i === 0 ? "bg-amber-400/20 text-amber-600 dark:text-amber-400" : "bg-surface-2 text-muted")}>{i + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-foreground">{r.name || r.torii}</p>
+                      <p className="truncate text-xs text-muted">{r.branch || "—"} · {r.accuracy}% accuracy</p>
+                    </div>
+                    <span className="text-sm font-bold text-foreground">{r.score}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          </div>
+
+          {/* Per-branch / department breakdown */}
+          {branches.length > 1 && (
+            <Card className="overflow-hidden">
+              <div className="border-b border-border px-5 py-3.5">
+                <h3 className="text-sm font-semibold capitalize text-foreground">By {branchLabel}</h3>
+                <p className="text-xs text-muted">Average score &amp; accuracy per {branchLabel}.</p>
+              </div>
+              <div className="overflow-x-auto scrollbar-thin">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-surface-2 text-left">
+                      <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted capitalize">{branchLabel}</th>
+                      <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-muted">Students</th>
+                      <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-muted">Avg Score</th>
+                      <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-muted">Avg Accuracy</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {branches.map((b) => (
+                      <tr key={b.branch}>
+                        <td className="px-4 py-2.5 font-medium text-foreground">{b.branch}</td>
+                        <td className="px-4 py-2.5 text-center text-muted">{b.students}</td>
+                        <td className="px-4 py-2.5 text-center font-semibold text-foreground">{b.avgScore}</td>
+                        <td className={cn("px-4 py-2.5 text-center font-semibold", accTone(b.avgAccuracy))}>{b.avgAccuracy}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
 
           {/* Student results table */}
           <Card className="overflow-hidden">

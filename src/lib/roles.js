@@ -40,3 +40,27 @@ export function canManageUsers(user) {
 export function seesAllStudents(user) {
   return !!user && !!ROLES[user.role]?.seesAllStudents;
 }
+
+/**
+ * Canonical department key so scoping works across the different codings used by
+ * the sources: HOD/directory use "CSE - DS" / "CSE - AI ML"; the assessment API
+ * uses short branch codes like "DS" / "AIML". These all normalise to one key.
+ */
+export function normDept(d) {
+  const s = String(d || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!s) return "";
+  if (s === "ds" || s === "cseds" || s.includes("datascience")) return "ds";
+  if (s === "aiml" || s === "cseaiml" || s === "aimlcse" || s.includes("aiandml") || s.includes("artificialintelligence") || s === "cseai") return "aiml";
+  if (s.startsWith("cse")) return "cse";
+  if (s.startsWith("ece")) return "ece";
+  if (s.startsWith("ise")) return "ise";
+  if (s.startsWith("civil")) return "civil";
+  if (s.startsWith("mech")) return "mech";
+  if (s.startsWith("eee")) return "eee";
+  return s;
+}
+
+/** True when two department labels refer to the same department. */
+export function sameDept(a, b) {
+  return normDept(a) === normDept(b);
+}

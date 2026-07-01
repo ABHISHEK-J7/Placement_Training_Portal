@@ -18,6 +18,11 @@ import {
   attendanceByDepartment,
   studentDayWise,
   parseDate,
+  distinctModes,
+  modeTallies,
+  rowModeStatus,
+  rowModePresent,
+  modeLabel,
 } from "@/lib/attendanceData";
 import { seesAllStudents, roleLabel } from "@/lib/roles";
 import { cn } from "@/lib/utils";
@@ -30,6 +35,7 @@ export default function AttendancePage() {
 
   const [batches, setBatches] = useState([]);
   const [directory, setDirectory] = useState([]);
+  const [roster, setRoster] = useState([]);
   const [batchId, setBatchId] = useState("");
   const [raw, setRaw] = useState(null); // upstream result for the selected batch
   const [loading, setLoading] = useState(false);
@@ -44,6 +50,7 @@ export default function AttendancePage() {
   useEffect(() => {
     apiGet("/attendance/batches").then((d) => setBatches(d.batches || [])).catch(() => setBatches([]));
     apiGet("/students").then((d) => setDirectory(d.students || [])).catch(() => setDirectory([]));
+    apiGet("/roster").then((d) => setRoster(d.roster || [])).catch(() => setRoster([]));
   }, []);
 
   const loadAttendance = useCallback(async (id) => {
@@ -53,8 +60,15 @@ export default function AttendancePage() {
     setRaw(null);
     try {
       const d = await apiPost("/attendance", { batch_id: id });
-      setRaw(d.result || []);
-      if (d.result && d.result.length === 0 && d.note) setError(d.note);
+      const res = d.result || [];
+      setRaw(res);
+      // Default the date filter to the latest (current) day so the table shows
+      // today's per-mode attendance; the user can switch to other days or "all".
+      const ds = new Set();
+      for (const r of res) for (const a of r.attendance || []) ds.add(a.date);
+      const dates = [...ds].sort((x, y) => parseDate(x) - parseDate(y));
+      setDateF(dates.length ? dates[dates.length - 1] : "all");
+      if (res.length === 0 && d.note) setError(d.note);
     } catch (e) {
       setError(e.message || "Could not load attendance.");
     } finally {
@@ -70,7 +84,14 @@ export default function AttendancePage() {
     loadAttendance(id);
   };
 
-  const dirMap = useMemo(() => directoryMap(directory), [directory]);
+  // Torii → { usn, name, department }. Departments come from the roster
+  // (directory-by-Torii + assessment API) — this is what enables HOD scoping,
+  // since the attendance API itself carries no department.
+  const dirMap = useMemo(() => {
+    const m = directoryMap(directory);
+    for (const r of roster) if (r.torii) m.set((r.torii || "").trim().toUpperCase(), r);
+    return m;
+  }, [directory, roster]);
   const scoped = useMemo(
     () => (raw ? scopeAttendance(user, enrichAttendance(raw, dirMap)) : []),
     [raw, dirMap, user],
@@ -121,6 +142,10 @@ export default function AttendancePage() {
   const dist = useMemo(() => distribution(rows), [rows]);
   const byDept = useMemo(() => attendanceByDepartment(rows), [rows]);
 
+  // Session modes (lightmode / brightmode) + per-mode present tallies for the current view.
+  const sessionModes = useMemo(() => distinctModes(rows), [rows]);
+  const modeStat = useMemo(() => modeTallies(rows, sessionModes), [rows, sessionModes]);
+
   if (!user) return null;
 
   const batchName = batches.find((b) => b.id === batchId)?.name || "";
@@ -131,7 +156,10 @@ export default function AttendancePage() {
       const { downloadAttendanceExcel } = await import("@/lib/attendanceExport");
       await downloadAttendanceExcel({
         rows,
-        filename: `attendance-${batchName || "batch"}.xlsx`,
+        modes: sessionModes,
+        dateSelected: dateF !== "all",
+        date: dateF,
+        filename: `attendance-${batchName || "batch"}${dateF !== "all" ? `-${dateF}` : ""}.xlsx`,
       });
     } finally {
       setDownloading(false);
@@ -230,6 +258,28 @@ export default function AttendancePage() {
             <StatCard label="Sessions" value={overview.total} hint={`${overview.present} present · ${overview.absent} absent`} />
           </div>
 
+          {/* Per-mode present counts (for the selected date) */}
+          {sessionModes.length > 0 && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {sessionModes.map((m) => (
+                <Card key={m} className="flex items-center justify-between p-5">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted">
+                      {modeLabel(m)}{dateF !== "all" ? ` · ${dateF}` : " · all dates"}
+                    </p>
+                    <p className="mt-2 text-3xl font-bold tracking-tight text-foreground">
+                      {modeStat[m]?.present || 0} <span className="text-base font-medium text-muted">present</span>
+                    </p>
+                    <p className="mt-1 text-xs text-muted">{modeStat[m]?.absent || 0} absent · {modeStat[m]?.total || 0} marked</p>
+                  </div>
+                  <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2Z" /></svg>
+                  </span>
+                </Card>
+              ))}
+            </div>
+          )}
+
           {/* Charts */}
           <div className="grid gap-4 lg:grid-cols-2">
             <DonutChart title="Attendance distribution" data={Object.entries(dist).filter(([, n]) => n > 0)} />
@@ -263,8 +313,9 @@ export default function AttendancePage() {
                     <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">USN</th>
                     <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Name</th>
                     <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Department</th>
-                    <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-muted">Present</th>
-                    <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-muted">Absent</th>
+                    {sessionModes.map((m) => (
+                      <th key={m} className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-muted">{modeLabel(m)}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -275,8 +326,24 @@ export default function AttendancePage() {
                       <td className="px-4 py-3 font-mono text-xs text-foreground">{r.usn || <span className="text-muted">—</span>}</td>
                       <td className="px-4 py-3 text-foreground">{r.name || <span className="text-muted">—</span>}</td>
                       <td className="px-4 py-3">{r.department ? <Badge tone="neutral">{r.department}</Badge> : <span className="text-muted">—</span>}</td>
-                      <td className="px-4 py-3 text-center font-medium text-foreground">{r.present}</td>
-                      <td className="px-4 py-3 text-center font-medium text-foreground">{r.absent}</td>
+                      {sessionModes.map((m) => {
+                        if (dateF === "all") {
+                          return <td key={m} className="px-4 py-3 text-center font-medium text-emerald-600 dark:text-emerald-400">{rowModePresent(r, m)}</td>;
+                        }
+                        const st = rowModeStatus(r, m);
+                        return (
+                          <td key={m} className="px-4 py-3 text-center">
+                            {st ? (
+                              <span className={cn(
+                                "inline-flex min-w-[4.75rem] items-center justify-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+                                st === "present"
+                                  ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400"
+                                  : "bg-red-500/10 text-red-600 ring-red-500/20 dark:text-red-400",
+                              )}>{st === "present" ? "Present" : "Absent"}</span>
+                            ) : <span className="text-muted">—</span>}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
                 </tbody>

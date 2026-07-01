@@ -1,4 +1,4 @@
-import { seesAllStudents } from "@/lib/roles";
+import { seesAllStudents, sameDept } from "@/lib/roles";
 
 /**
  * Helpers to enrich + analyse the upstream attendance result.
@@ -49,7 +49,7 @@ export function enrichAttendance(result, dirMap) {
 export function scopeAttendance(user, rows) {
   if (!user) return [];
   if (seesAllStudents(user)) return rows;
-  return rows.filter((r) => r.department === user.department);
+  return rows.filter((r) => sameDept(r.department, user.department));
 }
 
 /** DD-MM-YYYY → sortable timestamp. */
@@ -137,6 +137,55 @@ export function attendanceByDepartment(rows) {
   return [...m.values()]
     .map((e) => ({ department: e.department, students: e.students, percent: e.total ? Math.round((e.present / e.total) * 100) : 0 }))
     .sort((a, b) => b.percent - a.percent);
+}
+
+/* ─────────────────────────── session modes ──────────────────────────────
+ * Each day has two sessions identified by `mode`: "lightmode" & "brightmode".
+ * The student table shows a present/absent status per mode (for a chosen date).
+ */
+export const MODE_ORDER = ["lightmode", "brightmode"];
+const MODE_LABELS = { lightmode: "Light Mode", brightmode: "Bright Mode" };
+
+export function modeLabel(m) {
+  if (MODE_LABELS[m]) return MODE_LABELS[m];
+  const s = String(m || "").replace(/mode$/i, "").trim();
+  return s ? `${s.charAt(0).toUpperCase()}${s.slice(1)} Mode` : "—";
+}
+
+/** Distinct session modes present in the rows, ordered light → bright → others. */
+export function distinctModes(rows) {
+  const set = new Set();
+  for (const r of rows) for (const a of r.attendance || []) if (a.mode) set.add(a.mode);
+  return [...set].sort((a, b) => {
+    const ia = MODE_ORDER.indexOf(a);
+    const ib = MODE_ORDER.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+  });
+}
+
+/** Per-mode present/absent/total tallies over the (already date-filtered) rows. */
+export function modeTallies(rows, modes) {
+  const m = {};
+  for (const mode of modes) m[mode] = { present: 0, absent: 0, total: 0 };
+  for (const r of rows)
+    for (const a of r.attendance || []) {
+      if (!m[a.mode]) m[a.mode] = { present: 0, absent: 0, total: 0 };
+      m[a.mode].total += 1;
+      if (a.status === "present") m[a.mode].present += 1;
+      else if (a.status === "absent") m[a.mode].absent += 1;
+    }
+  return m;
+}
+
+/** A student's status ('present'|'absent'|'') for one mode within their (date-filtered) attendance. */
+export function rowModeStatus(row, mode) {
+  const it = (row.attendance || []).find((a) => a.mode === mode);
+  return it ? it.status : "";
+}
+
+/** Count of present sessions for a mode within the row's attendance (used for the "all dates" view). */
+export function rowModePresent(row, mode) {
+  return (row.attendance || []).filter((a) => a.mode === mode && a.status === "present").length;
 }
 
 /** Day × mode grid for one student's detail view. */

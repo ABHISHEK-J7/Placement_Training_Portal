@@ -6,12 +6,17 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { apiGet, apiPost, apiDelete } from "@/lib/apiClient";
-import { canManageUsers, seesAllStudents, roleLabel } from "@/lib/roles";
+import { canManageUsers, seesAllStudents, roleLabel, sameDept } from "@/lib/roles";
 import { normalizeUsn } from "@/lib/utils";
+
+const ALLOWED = new Set(["PT_AI_READY_2027", "PT_IT_2027", "PT_NON_IT_2027"]);
+const upper = (s) => (s || "").trim().toUpperCase();
 
 export default function StudentsPage() {
   const { user } = useAuth();
   const [directory, setDirectory] = useState([]);
+  const [batches, setBatches] = useState([]);
+  const [asmtMap, setAsmtMap] = useState(new Map());
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [batchF, setBatchF] = useState("all");
@@ -19,6 +24,7 @@ export default function StudentsPage() {
   const [importing, setImporting] = useState(false);
 
   const isAdmin = canManageUsers(user);
+  const all = user ? seesAllStudents(user) : false;
 
   const refresh = useCallback(async () => {
     try {
@@ -31,11 +37,14 @@ export default function StudentsPage() {
     }
   }, []);
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
+  useEffect(() => { refresh(); }, [refresh]);
 
-  // Honor ?batch= / ?dept= deep links (e.g. coming from the Batches page).
+  // Live batch roster (Torii numbers per batch) — the authoritative student list.
+  useEffect(() => {
+    apiGet("/batches").then((r) => setBatches(r.batches || [])).catch(() => setBatches([]));
+  }, []);
+
+  // Deep links from the Batches page.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const p = new URLSearchParams(window.location.search);
@@ -45,20 +54,74 @@ export default function StudentsPage() {
     if (d) setDeptF(d);
   }, []);
 
+  const dirHasTorii = useMemo(() => directory.some((s) => s.torii), [directory]);
+  const rosterMode = dirHasTorii && batches.length > 0;
+
+  // Once the directory carries Torii numbers we can join the live API roster; pull
+  // the names/departments the assessment API already knows (by Torii) to enrich it.
+  useEffect(() => {
+    if (!dirHasTorii) return;
+    let cancel = false;
+    (async () => {
+      const [daily, grand] = await Promise.all([
+        apiGet("/assessments?type=daily").then((r) => r.assessments || []).catch(() => []),
+        apiGet("/assessments?type=grand").then((r) => r.assessments || []).catch(() => []),
+      ]);
+      const inScope = [...daily, ...grand].filter((a) => a.batchList?.some((b) => ALLOWED.has(b)));
+      const map = new Map();
+      await Promise.all(inScope.map(async (a) => {
+        try {
+          const d = await apiPost("/assessments/details", { assessment: a.id, type: a.isGrand ? "grand" : "daily" });
+          for (const r of d.result || []) {
+            const t = upper(r.roll_no);
+            if (t && !map.has(t)) map.set(t, { name: r.first_name || "", department: (Array.isArray(r.branch) ? r.branch[0] : r.branch) || "" });
+          }
+        } catch { /* skip */ }
+      }));
+      if (!cancel) setAsmtMap(map);
+    })();
+    return () => { cancel = true; };
+  }, [dirHasTorii]);
+
+  const dirByTorii = useMemo(() => {
+    const m = new Map();
+    for (const s of directory) if (s.torii) m.set(upper(s.torii), s);
+    return m;
+  }, [directory]);
+
+  // Roster mode: full API roster joined to directory + assessment names.
+  // Otherwise fall back to the imported directory as-is.
+  const source = useMemo(() => {
+    if (!rosterMode) return directory;
+    const out = [];
+    for (const b of batches) for (const roll of b.rolls || []) {
+      const key = upper(roll);
+      const dir = dirByTorii.get(key) || {};
+      const asmt = asmtMap.get(key) || {};
+      out.push({
+        torii: roll,
+        usn: dir.usn || "",
+        name: dir.name || asmt.name || "",
+        department: dir.department || asmt.department || "",
+        batch: dir.batch || b.name,
+      });
+    }
+    return out;
+  }, [rosterMode, directory, batches, dirByTorii, asmtMap]);
+
   const scoped = useMemo(() => {
     if (!user) return [];
-    if (seesAllStudents(user)) return directory;
-    return directory.filter((s) => s.department === user.department);
-  }, [user, directory]);
+    return all ? source : source.filter((s) => sameDept(s.department, user.department));
+  }, [user, all, source]);
 
-  const batchOptions = useMemo(
-    () => [...new Set(scoped.map((s) => s.batch).filter(Boolean))].sort(),
-    [scoped],
-  );
-  const deptOptions = useMemo(
-    () => [...new Set(scoped.map((s) => s.department).filter(Boolean))].sort(),
-    [scoped],
-  );
+  const rosterTotal = useMemo(() => {
+    if (!user) return 0;
+    if (all) return batches.reduce((s, b) => s + (b.studentCount || 0), 0) || source.length;
+    return scoped.length;
+  }, [user, all, batches, scoped, source]);
+
+  const batchOptions = useMemo(() => [...new Set(scoped.map((s) => s.batch).filter(Boolean))].sort(), [scoped]);
+  const deptOptions = useMemo(() => [...new Set(scoped.map((s) => s.department).filter(Boolean))].sort(), [scoped]);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -68,25 +131,27 @@ export default function StudentsPage() {
       .filter((s) =>
         q === ""
           ? true
-          : s.usn.toLowerCase().includes(q) ||
+          : (s.usn || "").toLowerCase().includes(q) ||
+            (s.torii || "").toLowerCase().includes(q) ||
             (s.name || "").toLowerCase().includes(q) ||
             (s.department || "").toLowerCase().includes(q) ||
             (s.batch || "").toLowerCase().includes(q),
       );
-    return [...list].sort((a, b) => a.usn.localeCompare(b.usn));
+    return [...list].sort((a, b) => (a.usn || a.torii || "").localeCompare(b.usn || b.torii || ""));
   }, [scoped, query, batchF, deptF]);
 
   if (!user) return null;
-  const all = seesAllStudents(user);
+
+  const gap = all && !rosterMode && rosterTotal > directory.length;
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">Student Directory</h2>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">Students</h2>
           <p className="mt-1 text-sm text-muted">
             {all
-              ? "USN → department mapping used to scope attendance and show names."
+              ? `Live batch roster${rosterTotal ? ` · ${rosterTotal} students` : ""} — names & departments mapped by Torii number.`
               : `Students in your department (${user.department}).`}
           </p>
         </div>
@@ -105,6 +170,16 @@ export default function StudentsPage() {
         </div>
       </div>
 
+      {gap && (
+        <Card className="border border-amber-500/30 bg-amber-500/5 px-5 py-4">
+          <p className="text-sm text-foreground/90">
+            <span className="font-semibold">Live batch roster: {rosterTotal} students.</span>{" "}
+            {directory.length} have imported details ({rosterTotal - directory.length} pending). The batch API identifies students only by{" "}
+            <span className="font-medium">Torii number</span>, so re-import the directory Excel <span className="font-medium">with a Torii Number column</span> to include all {rosterTotal} and auto-fill names &amp; departments from the roster.
+          </p>
+        </Card>
+      )}
+
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative max-w-md flex-1">
           <svg aria-hidden width="18" height="18" viewBox="0 0 24 24" fill="none" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted">
@@ -114,7 +189,7 @@ export default function StudentsPage() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search USN, name, department, or batch…"
+            placeholder="Search Torii, USN, name, department, or batch…"
             className="h-11 w-full rounded-full border border-border bg-surface pl-11 pr-4 text-sm text-foreground placeholder:text-muted focus:border-brand/50 focus:outline-none focus:ring-2 focus:ring-brand/30"
           />
         </div>
@@ -140,29 +215,33 @@ export default function StudentsPage() {
         )}
       </div>
 
-      {!loaded ? null : rows.length === 0 ? (
+      {!loaded ? null : source.length === 0 ? (
         <Card className="px-6 py-16 text-center">
-          <h3 className="text-base font-semibold text-foreground">
-            {directory.length === 0 ? "No directory yet" : "No students match"}
-          </h3>
+          <h3 className="text-base font-semibold text-foreground">No students yet</h3>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted">
-            {directory.length === 0
-              ? isAdmin
-                ? "Import an Excel with columns USN, Department, Batch (Name optional) to map students for attendance scoping and batch grouping."
-                : "The student directory hasn't been imported yet."
-              : "Try a different search."}
+            {isAdmin
+              ? "Import an Excel with Torii No, USN, Department, Batch (Name optional) to map students for attendance and assessments."
+              : "The student roster hasn't been set up yet."}
           </p>
+        </Card>
+      ) : rows.length === 0 ? (
+        <Card className="px-6 py-16 text-center">
+          <h3 className="text-base font-semibold text-foreground">No students match</h3>
+          <p className="mx-auto mt-1 max-w-md text-sm text-muted">Try a different search or filter.</p>
         </Card>
       ) : (
         <Card className="overflow-hidden">
           <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-            <h3 className="text-sm font-semibold text-foreground">{rows.length} students</h3>
+            <h3 className="text-sm font-semibold text-foreground">
+              {rows.length} student{rows.length === 1 ? "" : "s"}{all && rosterTotal && rows.length !== rosterTotal ? ` of ${rosterTotal}` : ""}
+            </h3>
           </div>
           <div className="max-h-[65vh] overflow-auto scrollbar-thin">
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="text-left">
                   <th className="sticky top-0 z-10 w-14 bg-surface-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">#</th>
+                  {rosterMode && <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Torii Number</th>}
                   <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">USN</th>
                   <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Name</th>
                   <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Department</th>
@@ -171,11 +250,12 @@ export default function StudentsPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {rows.map((s, i) => (
-                  <tr key={s.usn} className="transition-colors hover:bg-surface-2/60">
+                  <tr key={s.torii || s.usn || i} className="transition-colors hover:bg-surface-2/60">
                     <td className="px-4 py-3 text-muted">{i + 1}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-foreground">{normalizeUsn(s.usn)}</td>
+                    {rosterMode && <td className="px-4 py-3 font-mono text-xs text-foreground">{s.torii || <span className="text-muted">—</span>}</td>}
+                    <td className="px-4 py-3 font-mono text-xs text-foreground">{s.usn ? normalizeUsn(s.usn) : <span className="text-muted">—</span>}</td>
                     <td className="px-4 py-3 text-foreground">{s.name || <span className="text-muted">—</span>}</td>
-                    <td className="px-4 py-3"><Badge tone="neutral">{s.department}</Badge></td>
+                    <td className="px-4 py-3">{s.department ? <Badge tone="neutral">{s.department}</Badge> : <span className="text-muted">—</span>}</td>
                     <td className="px-4 py-3">{s.batch ? <Badge tone="brand">{s.batch}</Badge> : <span className="text-muted">—</span>}</td>
                   </tr>
                 ))}
