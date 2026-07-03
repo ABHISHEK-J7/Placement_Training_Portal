@@ -54,8 +54,8 @@ export function normDept(d) {
   if (s.startsWith("cse")) return "cse";
   if (s.startsWith("ece")) return "ece";
   if (s.startsWith("ise")) return "ise";
-  if (s.startsWith("civil")) return "civil";
-  if (s.startsWith("mech")) return "mech";
+  if (s === "ce" || s.startsWith("civil")) return "civil";
+  if (s.startsWith("mech") || s === "me") return "mech";
   if (s.startsWith("eee")) return "eee";
   return s;
 }

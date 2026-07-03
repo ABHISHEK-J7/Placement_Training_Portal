@@ -76,6 +76,23 @@ export async function GET(request) {
       if (br && !e.department) e.department = br;
     }
 
+  // Owl Coder report carries branch (department) for the FULL assigned roster —
+  // the best available live source, so it fills departments the daily/grand
+  // assessments haven't covered.
+  try {
+    const { listCodingTests, codingReport } = await import("@/lib/owlcoder");
+    const tests = await listCodingTests();
+    if (tests[0]) {
+      const rep = await codingReport(tests[0].id);
+      for (const s of rep.students || []) {
+        const e = roster.get(upper(s.roll_no));
+        if (!e) continue;
+        if (s.first_name && !e.name) e.name = s.first_name;
+        if (s.branch && !e.department) e.department = s.branch;
+      }
+    }
+  } catch { /* owl coder optional */ }
+
   // Directory (imported Excel) — best source when it carries Torii numbers.
   try {
     const dir = await (await collection("students")).find({}, { projection: { _id: 0 } }).toArray();

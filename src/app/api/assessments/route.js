@@ -33,7 +33,9 @@ export async function GET(request) {
 async function daily() {
   const res = await fetch(`${BACKEND}/get-assessments`, { cache: "no-store" });
   const data = await res.json().catch(() => null);
-  const list = Array.isArray(data) ? data : data?.result || data?.data || [];
+  const raw = Array.isArray(data) ? data : data?.result || data?.data || [];
+  // Only the 3 placement batches — never surface other batches.
+  const list = raw.filter((a) => ALLOWED.has(a.batch_name));
   const assessments = list.map((a) => ({
     id: a._id,
     title: a.topic_name || "—",

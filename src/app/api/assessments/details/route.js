@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { allowedRolls, keepAllowed } from "@/lib/allowedRolls";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,9 @@ export async function POST(request) {
       cache: "no-store",
     });
     const data = await res.json().catch(() => null);
-    const result = Array.isArray(data) ? data : data?.result || [];
+    const all = Array.isArray(data) ? data : data?.result || [];
+    // Keep only students from the 3 placement batches.
+    const result = keepAllowed(all, await allowedRolls());
     return NextResponse.json({ ok: true, result });
   } catch {
     return NextResponse.json({ ok: false, error: "Could not reach the assessments source." }, { status: 502 });
