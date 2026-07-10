@@ -30,6 +30,12 @@ import { cn } from "@/lib/utils";
 const FIELD =
   "h-10 rounded-full border border-border bg-surface px-4 text-sm text-foreground focus:border-brand/50 focus:outline-none focus:ring-2 focus:ring-brand/30";
 
+function pctTone(p) {
+  if (p >= 75) return "text-emerald-600 dark:text-emerald-400";
+  if (p >= 50) return "text-amber-600 dark:text-amber-400";
+  return "text-red-500";
+}
+
 export default function AttendancePage() {
   const { user } = useAuth();
 
@@ -44,6 +50,7 @@ export default function AttendancePage() {
   const [deptF, setDeptF] = useState("all");
   const [dateF, setDateF] = useState("all");
   const [picked, setPicked] = useState(null); // student for the detail modal
+  const [showLow, setShowLow] = useState(false); // low-attendance list modal
   const [downloading, setDownloading] = useState(false);
 
   // Load batch list + student directory once.
@@ -62,12 +69,21 @@ export default function AttendancePage() {
       const d = await apiPost("/attendance", { batch_id: id });
       const res = d.result || [];
       setRaw(res);
-      // Default the date filter to the latest (current) day so the table shows
-      // today's per-mode attendance; the user can switch to other days or "all".
-      const ds = new Set();
-      for (const r of res) for (const a of r.attendance || []) ds.add(a.date);
-      const dates = [...ds].sort((x, y) => parseDate(x) - parseDate(y));
-      setDateF(dates.length ? dates[dates.length - 1] : "all");
+      // Default to the latest day that actually has attendance marked (a present
+      // record). Newer sessions are often created but not yet taken (all-absent),
+      // so defaulting to the newest day would look empty. Falls back to the newest
+      // day, then "all". The user can switch to any day or "all".
+      const allDates = new Set();
+      const markedDates = new Set();
+      for (const r of res)
+        for (const a of r.attendance || []) {
+          allDates.add(a.date);
+          if (a.status === "present") markedDates.add(a.date);
+        }
+      const sortByDate = (arr) => [...arr].sort((x, y) => parseDate(x) - parseDate(y));
+      const marked = sortByDate(markedDates);
+      const all = sortByDate(allDates);
+      setDateF(marked.length ? marked[marked.length - 1] : all.length ? all[all.length - 1] : "all");
       if (res.length === 0 && d.note) setError(d.note);
     } catch (e) {
       setError(e.message || "Could not load attendance.");
@@ -102,6 +118,22 @@ export default function AttendancePage() {
     () => [...new Set(scoped.map((r) => r.department).filter(Boolean))].sort(),
     [scoped],
   );
+
+  // Full (all-dates) record per student — the detail modal & low-attendance card
+  // use this so they're never limited to the selected date.
+  const scopedByTorii = useMemo(() => {
+    const m = new Map();
+    for (const r of scoped) m.set(r.torii, r);
+    return m;
+  }, [scoped]);
+
+  // Overall attendance across ALL dates (independent of the date filter).
+  const lowAttendance = useMemo(
+    () => scoped.filter((r) => r.total > 0 && r.percent < 50).sort((a, b) => a.percent - b.percent),
+    [scoped],
+  );
+  const neverPresent = useMemo(() => scoped.filter((r) => r.total > 0 && r.present === 0).length, [scoped]);
+  const openStudent = (r) => setPicked(scopedByTorii.get(r.torii) || r);
 
   // Every distinct date present in the loaded data (newest last).
   const dateOptions = useMemo(() => {
@@ -280,6 +312,27 @@ export default function AttendancePage() {
             </div>
           )}
 
+          {/* Low attendance alert — overall across ALL dates (not the selected date) */}
+          <button
+            type="button"
+            onClick={() => setShowLow(true)}
+            className="flex w-full flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5 text-left transition-colors hover:bg-amber-500/10"
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-500/10 text-red-500">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-foreground">Low attendance — below 50%</p>
+                <p className="text-xs text-muted">Overall across all dates{neverPresent ? ` · ${neverPresent} never marked present` : ""}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-3xl font-bold text-red-500">{lowAttendance.length}</span>
+              <span className="hidden text-sm font-medium text-brand sm:inline">View roll numbers →</span>
+            </div>
+          </button>
+
           {/* Charts */}
           <div className="grid gap-4 lg:grid-cols-2">
             <DonutChart title="Attendance distribution" data={Object.entries(dist).filter(([, n]) => n > 0)} />
@@ -302,10 +355,10 @@ export default function AttendancePage() {
           <Card className="overflow-hidden">
             <div className="border-b border-border px-5 py-3.5">
               <h3 className="text-sm font-semibold text-foreground">Students</h3>
-              <p className="text-xs text-muted">Click a student for day-wise detail.</p>
+              <p className="text-xs text-muted">Search above to find a student · click a row or “View all” to see every date they attended.</p>
             </div>
             <div className="max-h-[65vh] overflow-auto scrollbar-thin">
-              <table className="w-full border-collapse text-sm">
+              <table className="w-full min-w-[880px] border-collapse text-sm">
                 <thead>
                   <tr className="text-left">
                     <th className="sticky top-0 z-10 w-12 bg-surface-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">#</th>
@@ -313,19 +366,26 @@ export default function AttendancePage() {
                     <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">USN</th>
                     <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Name</th>
                     <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Department</th>
+                    <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-muted">Overall %</th>
                     {sessionModes.map((m) => (
                       <th key={m} className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-muted">{modeLabel(m)}</th>
                     ))}
+                    <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted">All dates</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {rows.map((r, i) => (
-                    <tr key={r.torii} onClick={() => setPicked(r)} className="cursor-pointer transition-colors hover:bg-surface-2/60">
+                    <tr key={r.torii} onClick={() => openStudent(r)} className="cursor-pointer transition-colors hover:bg-surface-2/60">
                       <td className="px-4 py-3 text-muted">{i + 1}</td>
                       <td className="px-4 py-3 font-mono text-xs text-foreground">{r.torii}</td>
                       <td className="px-4 py-3 font-mono text-xs text-foreground">{r.usn || <span className="text-muted">—</span>}</td>
                       <td className="px-4 py-3 text-foreground">{r.name || <span className="text-muted">—</span>}</td>
                       <td className="px-4 py-3">{r.department ? <Badge tone="neutral">{r.department}</Badge> : <span className="text-muted">—</span>}</td>
+                      <td className="px-4 py-3 text-center">
+                        {(scopedByTorii.get(r.torii) || r).total
+                          ? <span className={cn("font-semibold", pctTone((scopedByTorii.get(r.torii) || r).percent))}>{(scopedByTorii.get(r.torii) || r).percent}%</span>
+                          : <span className="text-muted">—</span>}
+                      </td>
                       {sessionModes.map((m) => {
                         if (dateF === "all") {
                           return <td key={m} className="px-4 py-3 text-center font-medium text-emerald-600 dark:text-emerald-400">{rowModePresent(r, m)}</td>;
@@ -344,6 +404,15 @@ export default function AttendancePage() {
                           </td>
                         );
                       })}
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); openStudent(r); }}
+                          className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-brand transition-colors hover:bg-surface-2"
+                        >
+                          View all
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -354,6 +423,87 @@ export default function AttendancePage() {
       )}
 
       {picked && <StudentDetail student={picked} onClose={() => setPicked(null)} />}
+      {showLow && (
+        <LowAttendanceModal
+          students={lowAttendance}
+          batchName={batchName}
+          onClose={() => setShowLow(false)}
+          onPick={(r) => { setShowLow(false); openStudent(r); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function LowAttendanceModal({ students, batchName, onClose, onPick }) {
+  const [q, setQ] = useState("");
+  const list = students.filter((s) => {
+    const t = q.trim().toLowerCase();
+    return t === "" ? true : (s.torii || "").toLowerCase().includes(t) || (s.name || "").toLowerCase().includes(t) || (s.usn || "").toLowerCase().includes(t);
+  });
+  const download = async () => {
+    const XLSX = await import("xlsx");
+    const aoa = [
+      ["Torii Number", "USN", "Name", "Department", "Present", "Total", "Attendance %"],
+      ...students.map((s) => [s.torii, s.usn || "", s.name || "", s.department || "", s.present, s.total, s.percent]),
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), "Low Attendance");
+    XLSX.writeFile(wb, `low-attendance-${batchName || "batch"}.xlsx`);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
+      <button aria-label="Close" className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative flex max-h-[90dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl border border-border bg-surface shadow-card-hover sm:rounded-2xl">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
+          <div>
+            <h3 className="text-base font-semibold text-foreground">Low attendance — below 50%</h3>
+            <p className="text-xs text-muted">{students.length} student{students.length === 1 ? "" : "s"} · overall across all dates</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {students.length > 0 && <Button size="sm" variant="secondary" onClick={download}>⬇ Excel</Button>}
+            <button onClick={onClose} aria-label="Close" className="rounded-full p-2 text-muted hover:bg-surface-2 hover:text-foreground">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+            </button>
+          </div>
+        </div>
+        <div className="border-b border-border px-5 py-3">
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search roll no, USN or name…" className="h-10 w-full rounded-full border border-border bg-surface px-4 text-sm text-foreground placeholder:text-muted focus:border-brand/50 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+        </div>
+        <div className="flex-1 overflow-auto scrollbar-thin">
+          {list.length === 0 ? (
+            <p className="px-5 py-10 text-center text-sm text-muted">{students.length === 0 ? "No students below 50% — great attendance!" : "No students match your search."}</p>
+          ) : (
+            <table className="w-full min-w-[560px] border-collapse text-sm">
+              <thead>
+                <tr className="bg-surface-2 text-left">
+                  <th className="sticky top-0 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted">#</th>
+                  <th className="sticky top-0 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted">Torii No</th>
+                  <th className="sticky top-0 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted">USN</th>
+                  <th className="sticky top-0 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted">Name</th>
+                  <th className="sticky top-0 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted">Dept</th>
+                  <th className="sticky top-0 px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-muted">Present</th>
+                  <th className="sticky top-0 px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted">Attendance</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {list.map((s, i) => (
+                  <tr key={s.torii} onClick={() => onPick(s)} className="cursor-pointer transition-colors hover:bg-surface-2/60">
+                    <td className="px-4 py-2.5 text-muted">{i + 1}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-foreground">{s.torii}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-muted">{s.usn || "—"}</td>
+                    <td className="px-4 py-2.5 text-foreground">{s.name || "—"}</td>
+                    <td className="px-4 py-2.5">{s.department ? <Badge tone="neutral">{s.department}</Badge> : <span className="text-muted">—</span>}</td>
+                    <td className="px-4 py-2.5 text-center text-muted">{s.present}/{s.total}</td>
+                    <td className={cn("px-4 py-2.5 text-right font-bold", s.present === 0 ? "text-red-500" : "text-amber-600 dark:text-amber-400")}>{s.percent}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -370,7 +520,10 @@ function StudentDetail({ student, onClose }) {
             <p className="text-xs text-muted">
               <span className="font-mono">{student.torii}</span>
               {student.usn ? ` · ${student.usn}` : ""}
-              {student.department ? ` · ${student.department}` : ""} · {student.present}/{student.total} ({student.percent}%)
+              {student.department ? ` · ${student.department}` : ""}
+            </p>
+            <p className="mt-0.5 text-xs font-medium text-foreground/80">
+              All dates · {student.present}/{student.total} present ({student.percent}%)
             </p>
           </div>
           <button onClick={onClose} aria-label="Close" className="rounded-full p-2 text-muted hover:bg-surface-2 hover:text-foreground">

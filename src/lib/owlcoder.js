@@ -10,25 +10,30 @@
 const OWL = process.env.OWLCODER_URL || "https://owlcoder.technicalhub.io:3001/api";
 const COURSE = "669a2fb7c03fc56b320befa7"; // Placement Training
 
-// batch_name → batch _id (same ids as the Torii backend)
+// Owl Coder assigns coding/SQL tests to its OWN "CODING_*" batches (distinct ids
+// from the Torii backend). We map them back to the 3 placement batch names.
 export const CODING_BATCHES = {
-  PT_AI_READY_2027: "6a3d01574748ff3d73afb7f3",
-  PT_IT_2027: "6a3d020d4748ff3d73afda62",
-  PT_NON_IT_2027: "6a3d01c44748ff3d73afd0d5",
+  PT_AI_READY_2027: "6a3cb50e418f42b929aceb7d", // CODING_AI_READY_ENGINEER_PT_2027
+  PT_IT_2027: "6a3cb5a9418f42b929acf280", // CODING_IT_PT_2027
+  PT_NON_IT_2027: "6a3cb5f3418f42b929acf8f0", // CODING_NON_IT_PT_2027
 };
 
-async function owlPost(path, body) {
-  try {
-    const r = await fetch(`${OWL}/${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      cache: "no-store",
-    });
-    return await r.json().catch(() => null);
-  } catch {
-    return null;
+async function owlPost(path, body, tries = 2) {
+  for (let i = 0; i < tries; i++) {
+    try {
+      const r = await fetch(`${OWL}/${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        cache: "no-store",
+        signal: AbortSignal.timeout(12000), // never let one hung call block the whole enumeration
+      });
+      if (r.ok) return await r.json().catch(() => null);
+    } catch {
+      /* time out / network — retry once */
+    }
   }
+  return null;
 }
 
 // Owl Coder's `attempted` boolean and `*_result` strings are unreliable (they read
@@ -120,7 +125,7 @@ export async function listCodingTests(force = false) {
   );
 
   tests.sort((a, b) => new Date(b.start || 0) - new Date(a.start || 0));
-  cache = { at: Date.now(), tests };
+  if (tests.length) cache = { at: Date.now(), tests }; // don't cache a transient empty result
   return tests;
 }
 
