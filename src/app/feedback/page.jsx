@@ -24,6 +24,7 @@ import {
   commentClasses,
 } from "@/lib/feedback";
 import { downloadFeedbackExcel, downloadCommentsExcel } from "@/lib/feedbackExport";
+import { downloadFeedbackPdf, downloadCommentsPdf } from "@/lib/feedbackPdf";
 import { canManageUsers, roleLabel } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
@@ -86,17 +87,29 @@ export default function FeedbackPage() {
 
   if (!user) return null;
 
-  const onDownload = async () => {
+  const batchLabel = batchF !== "all" ? batchOptions.find(([slug]) => slug === batchF)?.[1] || batchF : "";
+  const dateScopeLabel = dateF !== "all" ? dateOptions.find((d) => d.key === dateF)?.label || dateF : "All dates";
+  const reportName = `feedback-report${batchF !== "all" ? "-" + batchF : ""}${dateF !== "all" ? "-" + dateF : ""}`;
+  const commentsName = `feedback-comments${batchF !== "all" ? "-" + batchF : ""}${commentClass !== "all" ? "-" + commentClass.replace(/\s+/g, "_") : ""}${dateF !== "all" ? "-" + dateF : ""}`;
+
+  const onDownloadPdf = async () => {
+    setDownloading(true);
+    try {
+      await downloadFeedbackPdf({
+        filtered, overview, byBatch: batches, byClassRows: classRows, distribution: dist, matrix,
+        context: batchLabel, dateScope: dateScopeLabel,
+        filename: `${reportName}.pdf`,
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
+  const onDownloadExcel = async () => {
     setDownloading(true);
     try {
       await downloadFeedbackExcel({
-        filtered,
-        overview,
-        byBatch: batches,
-        byClassRows: classRows,
-        distribution: dist,
-        matrix,
-        filename: `feedback-report${batchF !== "all" ? "-" + batchF : ""}${dateF !== "all" ? "-" + dateF : ""}.xlsx`,
+        filtered, overview, byBatch: batches, byClassRows: classRows, distribution: dist, matrix,
+        filename: `${reportName}.xlsx`,
       });
     } finally {
       setDownloading(false);
@@ -112,8 +125,11 @@ export default function FeedbackPage() {
         </div>
         <div className="flex items-center gap-2">
           <Badge tone="brand">{roleLabel(user.role)}</Badge>
-          <Button size="sm" onClick={onDownload} disabled={downloading || filtered.length === 0}>
-            {downloading ? "Preparing…" : "⬇ Download Excel"}
+          <Button variant="secondary" size="sm" onClick={onDownloadExcel} disabled={downloading || filtered.length === 0}>
+            ⬇ Excel
+          </Button>
+          <Button size="sm" onClick={onDownloadPdf} disabled={downloading || filtered.length === 0}>
+            {downloading ? "Preparing…" : "⬇ PDF"}
           </Button>
         </div>
       </div>
@@ -316,14 +332,16 @@ export default function FeedbackPage() {
                   variant="secondary"
                   size="sm"
                   disabled={shownComments.length === 0}
-                  onClick={() =>
-                    downloadCommentsExcel(
-                      shownComments,
-                      `feedback-comments${batchF !== "all" ? "-" + batchF : ""}${commentClass !== "all" ? "-" + commentClass.replace(/\s+/g, "_") : ""}${dateF !== "all" ? "-" + dateF : ""}.xlsx`,
-                    )
-                  }
+                  onClick={() => downloadCommentsExcel(shownComments, `${commentsName}.xlsx`)}
                 >
-                  Download Excel
+                  ⬇ Excel
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={shownComments.length === 0}
+                  onClick={() => downloadCommentsPdf(shownComments, `${commentsName}.pdf`, dateScopeLabel)}
+                >
+                  ⬇ PDF
                 </Button>
               </div>
             </div>

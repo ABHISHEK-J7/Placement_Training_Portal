@@ -1,4 +1,20 @@
 import { fmtTime } from "@/lib/assessments";
+import { downloadTablePdf } from "@/lib/pdf";
+
+const HEAD = ["Torii Number", "USN", "Name", "Branch", "Correct", "Wrong", "Score", "Accuracy %", "Time"];
+const bodyRows = (rows) =>
+  rows.map((r) => [r.torii, r.usn || "", r.name || "", r.branch || "", String(r.correct), String(r.wrong), String(r.score), String(r.accuracy), fmtTime(r.time)]);
+
+/** PDF of the per-assessment student results table (centre-aligned, same data). */
+export async function downloadAssessmentPdf({ rows, title = "Assessment Results", filename = "assessment.pdf" }) {
+  await downloadTablePdf({
+    title,
+    subtitle: `${rows.length} students`,
+    sections: [{ head: HEAD, body: bodyRows(rows), columnStyles: { 2: { halign: "left" } } }],
+    orientation: "l",
+    filename,
+  });
+}
 
 /**
  * Excel export of the per-assessment student results table — and only that table.

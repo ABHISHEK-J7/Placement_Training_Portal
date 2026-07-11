@@ -129,6 +129,26 @@ export default function CodingResultPage() {
     }
   };
 
+  const onDownloadPdf = async () => {
+    setDownloading(true);
+    try {
+      const { downloadTablePdf } = await import("@/lib/pdf");
+      await downloadTablePdf({
+        title: `Coding — ${test?.module_test_name || id}`,
+        subtitle: `${rows.length} students`,
+        sections: [{
+          head: ["Torii Number", "Name", "Branch", "MCQ Correct", "MCQ Total", "MCQ %", "MCQ Result", "Coding %", "Coding Result", "Overall", "Violations"],
+          body: rows.map((s) => [s.roll_no, s.first_name || "", s.branch || "", String(s.mcq_total_correct ?? ""), String(s.mcq_total_questions ?? ""), String(num(s.mcq_percentage)), s.mcq_result || "-", String(num(s.coding_percentage)), s.coding_result || "-", s.overall_result || "-", String(s.violations ?? 0)]),
+          columnStyles: { 1: { halign: "left" } },
+        }],
+        orientation: "l",
+        filename: `coding-${test?.module_test_name || id}.pdf`,
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   if (!user) return null;
 
   return (
@@ -204,7 +224,8 @@ export default function CodingResultPage() {
                   <option value="coding">Sort: Coding</option>
                   <option value="name">Sort: Name</option>
                 </select>
-                <Button size="sm" onClick={onDownload} disabled={downloading || rows.length === 0}>{downloading ? "…" : "⬇ Excel"}</Button>
+                <Button variant="secondary" size="sm" onClick={onDownload} disabled={downloading || rows.length === 0}>⬇ Excel</Button>
+                <Button size="sm" onClick={onDownloadPdf} disabled={downloading || rows.length === 0}>{downloading ? "…" : "⬇ PDF"}</Button>
               </div>
             </div>
             <div className="max-h-[65vh] overflow-auto scrollbar-thin">

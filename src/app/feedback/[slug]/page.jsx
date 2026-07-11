@@ -12,6 +12,7 @@ import { Stars } from "@/components/ui/Stars";
 import { StatCard } from "@/components/dashboard/charts";
 import { batchDetail, scopeFeedback, distinctDates, dateKey, dateLabel, commentClasses } from "@/lib/feedback";
 import { downloadBatchDetailExcel, downloadCommentsExcel } from "@/lib/feedbackExport";
+import { downloadBatchDetailPdf, downloadCommentsPdf } from "@/lib/feedbackPdf";
 import { cn } from "@/lib/utils";
 
 const SELECT =
@@ -46,6 +47,7 @@ export default function BatchFeedbackPage() {
     () => (commentClass === "all" ? detail.comments : detail.comments.filter((c) => c.class === commentClass)),
     [detail.comments, commentClass],
   );
+  const dateScopeLabel = dateF !== "all" ? dates.find((d) => d.key === dateF)?.label || dateF : "All dates";
 
   if (!user) return null;
 
@@ -76,18 +78,34 @@ export default function BatchFeedbackPage() {
               <span>· {detail.responses} responses</span>
             </div>
           </div>
-          <Button
-            size="sm"
-            onClick={() =>
-              downloadBatchDetailExcel({
-                detail,
-                submissions: filtered,
-                filename: `feedback-${slug}${dateF !== "all" ? "-" + dateF : ""}.xlsx`,
-              })
-            }
-          >
-            ⬇ Download Excel
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                downloadBatchDetailExcel({
+                  detail,
+                  submissions: filtered,
+                  filename: `feedback-${slug}${dateF !== "all" ? "-" + dateF : ""}.xlsx`,
+                })
+              }
+            >
+              ⬇ Excel
+            </Button>
+            <Button
+              size="sm"
+              onClick={() =>
+                downloadBatchDetailPdf({
+                  detail,
+                  submissions: filtered,
+                  dateScope: dateScopeLabel,
+                  filename: `feedback-${slug}${dateF !== "all" ? "-" + dateF : ""}.pdf`,
+                })
+              }
+            >
+              ⬇ PDF
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -186,7 +204,20 @@ export default function BatchFeedbackPage() {
                 )
               }
             >
-              ⬇ Download
+              ⬇ Excel
+            </Button>
+            <Button
+              size="sm"
+              disabled={shownComments.length === 0}
+              onClick={() =>
+                downloadCommentsPdf(
+                  shownComments,
+                  `feedback-${slug}-comments${commentClass !== "all" ? "-" + commentClass.replace(/\s+/g, "_") : ""}.pdf`,
+                  dateScopeLabel,
+                )
+              }
+            >
+              ⬇ PDF
             </Button>
           </div>
         </div>

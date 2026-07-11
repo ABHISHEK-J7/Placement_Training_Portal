@@ -119,6 +119,25 @@ export default function CommunicationResultPage() {
     }
   };
 
+  const onDownloadPdf = async () => {
+    setDownloading(true);
+    try {
+      const { downloadTablePdf } = await import("@/lib/pdf");
+      await downloadTablePdf({
+        title: `Communication — ${moduleName}`,
+        subtitle: `${rows.length} students`,
+        sections: [{
+          head: ["Roll No", "Name", "Branch", "Accuracy", "Duration (s)", "Attempted"],
+          body: rows.map((r) => [r.roll_no, r.first_name || "", r.branch || "", String(num(r.accuracy)), String(num(r.duration)), r.attempted_date || ""]),
+          columnStyles: { 1: { halign: "left" } },
+        }],
+        filename: `communication-${moduleName}.pdf`,
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   if (!user) return null;
 
   return (
@@ -180,7 +199,8 @@ export default function CommunicationResultPage() {
                   <option value="date">Sort: Date</option>
                   <option value="name">Sort: Name</option>
                 </select>
-                <Button size="sm" onClick={onDownload} disabled={downloading || rows.length === 0}>{downloading ? "…" : "⬇ Excel"}</Button>
+                <Button variant="secondary" size="sm" onClick={onDownload} disabled={downloading || rows.length === 0}>⬇ Excel</Button>
+                <Button size="sm" onClick={onDownloadPdf} disabled={downloading || rows.length === 0}>{downloading ? "…" : "⬇ PDF"}</Button>
               </div>
             </div>
             <div className="max-h-[65vh] overflow-auto scrollbar-thin">

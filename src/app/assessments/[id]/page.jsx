@@ -120,11 +120,21 @@ export default function AssessmentDetailPage() {
   );
   const branchLabel = isGrand ? "branch" : "department";
 
+  const baseName = `${isGrand ? "grand-" : ""}assessment-${meta?.title || id}`;
   const onDownload = async () => {
     setDownloading(true);
     try {
       const { downloadAssessmentExcel } = await import("@/lib/assessmentsExport");
-      await downloadAssessmentExcel({ rows, filename: `${isGrand ? "grand-" : ""}assessment-${meta?.title || id}.xlsx` });
+      await downloadAssessmentExcel({ rows, filename: `${baseName}.xlsx` });
+    } finally {
+      setDownloading(false);
+    }
+  };
+  const onDownloadPdf = async () => {
+    setDownloading(true);
+    try {
+      const { downloadAssessmentPdf } = await import("@/lib/assessmentsExport");
+      await downloadAssessmentPdf({ rows, title: meta?.title || "Assessment Results", filename: `${baseName}.pdf` });
     } finally {
       setDownloading(false);
     }
@@ -260,7 +270,8 @@ export default function AssessmentDetailPage() {
                   <option value="time">Sort: Time</option>
                   <option value="name">Sort: Name</option>
                 </select>
-                <Button size="sm" onClick={onDownload} disabled={downloading || rows.length === 0}>{downloading ? "Preparing…" : "⬇ Excel"}</Button>
+                <Button variant="secondary" size="sm" onClick={onDownload} disabled={downloading || rows.length === 0}>⬇ Excel</Button>
+                <Button size="sm" onClick={onDownloadPdf} disabled={downloading || rows.length === 0}>{downloading ? "…" : "⬇ PDF"}</Button>
               </div>
             </div>
             <div className="max-h-[65vh] overflow-auto scrollbar-thin">

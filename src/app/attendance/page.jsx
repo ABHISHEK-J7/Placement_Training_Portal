@@ -206,6 +206,36 @@ export default function AttendancePage() {
     }
   };
 
+  const onDownloadPdf = async () => {
+    setDownloading(true);
+    try {
+      const { downloadTablePdf } = await import("@/lib/pdf");
+      const head = ["Torii Number", "USN", "Name", "Department", ...sessionModes.map(modeLabel)];
+      const body = rows.map((r) => [
+        r.torii,
+        r.usn || "",
+        r.name || "",
+        r.department || "",
+        ...sessionModes.map((m) => {
+          if (dateF !== "all") {
+            const st = rowModeStatus(r, m);
+            return st === "present" ? "Present" : st === "absent" ? "Absent" : "—";
+          }
+          return String(rowModePresent(r, m));
+        }),
+      ]);
+      await downloadTablePdf({
+        title: `Attendance — ${batchName || "Batch"}`,
+        subtitle: `${dateF !== "all" ? dateF : "All dates"} · ${rows.length} students`,
+        sections: [{ head, body, columnStyles: { 2: { halign: "left" } } }],
+        orientation: sessionModes.length > 2 ? "l" : "p",
+        filename: `attendance-${batchName || "batch"}${dateF !== "all" ? `-${dateF}` : ""}.pdf`,
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -272,9 +302,12 @@ export default function AttendancePage() {
             <div className="ml-auto flex items-center gap-3">
               <span className="text-sm text-muted">{rows.length} students</span>
               {rows.length > 0 && (
-                <Button size="sm" onClick={onDownload} disabled={downloading}>
-                  {downloading ? "Preparing…" : "⬇ Download Excel"}
-                </Button>
+                <>
+                  <Button variant="secondary" size="sm" onClick={onDownload} disabled={downloading}>⬇ Excel</Button>
+                  <Button size="sm" onClick={onDownloadPdf} disabled={downloading}>
+                    {downloading ? "Preparing…" : "⬇ PDF"}
+                  </Button>
+                </>
               )}
             </div>
           </>
@@ -481,6 +514,20 @@ function LowAttendanceModal({ students, batchName, onClose, onPick }) {
     XLSX.writeFile(wb, `low-attendance-${batchName || "batch"}.xlsx`);
   };
 
+  const downloadPdf = async () => {
+    const { downloadTablePdf } = await import("@/lib/pdf");
+    await downloadTablePdf({
+      title: "Low Attendance",
+      subtitle: `Below 50% · ${batchName || "batch"} · ${students.length} students`,
+      sections: [{
+        head: ["Torii Number", "USN", "Name", "Department", "Present", "Total", "Attendance %"],
+        body: students.map((s) => [s.torii, s.usn || "", s.name || "", s.department || "", String(s.present), String(s.total), `${s.percent}%`]),
+        columnStyles: { 2: { halign: "left" } },
+      }],
+      filename: `low-attendance-${batchName || "batch"}.pdf`,
+    });
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
       <button aria-label="Close" className="absolute inset-0 bg-black/50" onClick={onClose} />
@@ -492,6 +539,7 @@ function LowAttendanceModal({ students, batchName, onClose, onPick }) {
           </div>
           <div className="flex items-center gap-2">
             {students.length > 0 && <Button size="sm" variant="secondary" onClick={download}>⬇ Excel</Button>}
+            {students.length > 0 && <Button size="sm" onClick={downloadPdf}>⬇ PDF</Button>}
             <button onClick={onClose} aria-label="Close" className="rounded-full p-2 text-muted hover:bg-surface-2 hover:text-foreground">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
             </button>
