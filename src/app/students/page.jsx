@@ -2,18 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useStudentStatus } from "@/components/students/StudentStatusProvider";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { apiGet, apiPost, apiDelete } from "@/lib/apiClient";
 import { canManageUsers, seesAllStudents, roleLabel, sameDept } from "@/lib/roles";
-import { normalizeUsn } from "@/lib/utils";
+import { normalizeUsn, cn } from "@/lib/utils";
 
 const ALLOWED = new Set(["PT_AI_READY_2027", "PT_IT_2027", "PT_NON_IT_2027"]);
 const upper = (s) => (s || "").trim().toUpperCase();
 
 export default function StudentsPage() {
   const { user } = useAuth();
+  const { isActive, activeOnly, setActiveOnly, setStudentActive, setContinuing, resetAll } = useStudentStatus();
   const [directory, setDirectory] = useState([]);
   const [batches, setBatches] = useState([]);
   const [asmtMap, setAsmtMap] = useState(new Map());
@@ -22,6 +24,7 @@ export default function StudentsPage() {
   const [batchF, setBatchF] = useState("all");
   const [deptF, setDeptF] = useState("all");
   const [importing, setImporting] = useState(false);
+  const [continuingOpen, setContinuingOpen] = useState(false);
 
   const isAdmin = canManageUsers(user);
   const all = user ? seesAllStudents(user) : false;
@@ -114,18 +117,31 @@ export default function StudentsPage() {
     return all ? source : source.filter((s) => sameDept(s.department, user.department));
   }, [user, all, source]);
 
-  const rosterTotal = useMemo(() => {
+  // Active/inactive split within the current (dept-)scope.
+  const viewScoped = useMemo(
+    () => (activeOnly ? scoped.filter((s) => isActive(s.torii)) : scoped),
+    [scoped, activeOnly, isActive],
+  );
+  const inactiveInScope = useMemo(
+    () => scoped.reduce((n, s) => n + (isActive(s.torii) ? 0 : 1), 0),
+    [scoped, isActive],
+  );
+
+  // Total headcount in scope (all statuses) and the active subset.
+  const scopeTotal = useMemo(() => {
     if (!user) return 0;
     if (all) return batches.reduce((s, b) => s + (b.studentCount || 0), 0) || source.length;
     return scoped.length;
   }, [user, all, batches, scoped, source]);
+  const activeTotal = Math.max(0, scopeTotal - inactiveInScope);
+  const rosterTotal = activeOnly ? activeTotal : scopeTotal;
 
   const batchOptions = useMemo(() => [...new Set(scoped.map((s) => s.batch).filter(Boolean))].sort(), [scoped]);
   const deptOptions = useMemo(() => [...new Set(scoped.map((s) => s.department).filter(Boolean))].sort(), [scoped]);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const list = scoped
+    const list = viewScoped
       .filter((s) => (batchF === "all" ? true : s.batch === batchF))
       .filter((s) => (deptF === "all" ? true : s.department === deptF))
       .filter((s) =>
@@ -138,7 +154,7 @@ export default function StudentsPage() {
             (s.batch || "").toLowerCase().includes(q),
       );
     return [...list].sort((a, b) => (a.usn || a.torii || "").localeCompare(b.usn || b.torii || ""));
-  }, [scoped, query, batchF, deptF]);
+  }, [viewScoped, query, batchF, deptF]);
 
   if (!user) return null;
 
@@ -151,14 +167,37 @@ export default function StudentsPage() {
           <h2 className="text-2xl font-bold tracking-tight text-foreground">Students</h2>
           <p className="mt-1 text-sm text-muted">
             {all
-              ? `Live batch roster${rosterTotal ? ` · ${rosterTotal} students` : ""} — names & departments mapped by Torii number.`
-              : `Students in your department (${user.department}).`}
+              ? `Live batch roster · ${rosterTotal} ${activeOnly ? "continuing" : "students"}`
+              : `Students in your department (${user.department}) · ${rosterTotal} ${activeOnly ? "continuing" : "students"}`}
+            {inactiveInScope > 0 && (
+              <span className="text-amber-600 dark:text-amber-400">
+                {" "}· {inactiveInScope} inactive{activeOnly ? " hidden" : ""}
+              </span>
+            )}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Active-only / all view toggle (shared across the portal) */}
+          <div className="flex items-center rounded-full border border-border p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setActiveOnly(true)}
+              className={cn("rounded-full px-3 py-1.5 font-medium transition-colors", activeOnly ? "bg-brand/10 text-brand" : "text-muted hover:text-foreground")}
+            >
+              Active only
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveOnly(false)}
+              className={cn("rounded-full px-3 py-1.5 font-medium transition-colors", !activeOnly ? "bg-brand/10 text-brand" : "text-muted hover:text-foreground")}
+            >
+              All
+            </button>
+          </div>
           <Badge tone={all ? "brand" : "neutral"}>{all ? roleLabel(user.role) : user.department}</Badge>
           {isAdmin && (
             <>
+              <Button variant="secondary" size="sm" onClick={() => setContinuingOpen(true)}>Continuing list</Button>
               {directory.length > 0 && (
                 <Button variant="secondary" size="sm" onClick={async () => { await apiDelete("/students"); refresh(); }}>
                   Clear
@@ -246,6 +285,7 @@ export default function StudentsPage() {
                   <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Name</th>
                   <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Department</th>
                   <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Batch</th>
+                  <th className="sticky top-0 z-10 bg-surface-2 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -257,6 +297,20 @@ export default function StudentsPage() {
                     <td className="px-4 py-3 text-foreground">{s.name || <span className="text-muted">—</span>}</td>
                     <td className="px-4 py-3">{s.department ? <Badge tone="neutral">{s.department}</Badge> : <span className="text-muted">—</span>}</td>
                     <td className="px-4 py-3">{s.batch ? <Badge tone="brand">{s.batch}</Badge> : <span className="text-muted">—</span>}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Badge tone={isActive(s.torii) ? "success" : "danger"}>{isActive(s.torii) ? "Active" : "Inactive"}</Badge>
+                        {isAdmin && s.torii && (
+                          <button
+                            type="button"
+                            onClick={() => setStudentActive(s.torii, !isActive(s.torii))}
+                            className={cn("text-xs font-medium hover:underline", isActive(s.torii) ? "text-red-500" : "text-emerald-600 dark:text-emerald-400")}
+                          >
+                            {isActive(s.torii) ? "Disable" : "Enable"}
+                          </button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -268,6 +322,134 @@ export default function StudentsPage() {
       {importing && isAdmin && (
         <ImportDirectoryModal onClose={() => setImporting(false)} onDone={refresh} />
       )}
+
+      {continuingOpen && isAdmin && (
+        <ContinuingListModal
+          roster={source}
+          onClose={() => setContinuingOpen(false)}
+          onApply={setContinuing}
+          onReset={resetAll}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Paste the placement dept's "continuing students" list (Torii numbers, any
+ * delimiter). Those stay active; everyone else in the roster is disabled.
+ */
+function ContinuingListModal({ roster, onClose, onApply, onReset }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const allTorii = useMemo(
+    () => [...new Set((roster || []).map((s) => upper(s.torii)).filter(Boolean))],
+    [roster],
+  );
+  const rosterSet = useMemo(() => new Set(allTorii), [allTorii]);
+
+  // Parse pasted tokens → Torii numbers; split on anything that isn't a roll char.
+  const pasted = useMemo(
+    () => [...new Set(text.split(/[^A-Za-z0-9]+/).map(upper).filter(Boolean))],
+    [text],
+  );
+  const matched = useMemo(() => pasted.filter((t) => rosterSet.has(t)), [pasted, rosterSet]);
+  const unknown = useMemo(() => pasted.filter((t) => !rosterSet.has(t)), [pasted, rosterSet]);
+  const willDisable = allTorii.length - matched.length;
+
+  const apply = async () => {
+    setBusy(true);
+    try {
+      const res = await onApply(matched, allTorii);
+      setResult({ active: res?.active ?? matched.length, total: res?.total ?? allTorii.length });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reset = async () => {
+    setBusy(true);
+    try {
+      await onReset();
+      setResult({ active: allTorii.length, total: allTorii.length, reset: true });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
+      <button aria-label="Close" className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative flex max-h-[90dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-2xl border border-border bg-surface shadow-card-hover sm:rounded-2xl">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div>
+            <h3 className="text-base font-semibold text-foreground">Set continuing students</h3>
+            <p className="text-xs text-muted">Paste the Torii numbers who continue. Everyone else in the roster is disabled.</p>
+          </div>
+          <button onClick={onClose} aria-label="Close" className="rounded-full p-2 text-muted hover:bg-surface-2 hover:text-foreground">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+          </button>
+        </div>
+        <div className="flex-1 space-y-4 overflow-y-auto p-5 scrollbar-thin">
+          {!result ? (
+            <>
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                rows={8}
+                placeholder="27AAB00020, 27AAB00021&#10;27AAB00034 …"
+                className="w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 font-mono text-sm text-foreground placeholder:text-muted focus:border-brand/50 focus:outline-none focus:ring-2 focus:ring-brand/30"
+              />
+              <div className="grid grid-cols-3 gap-3 text-center text-sm">
+                <div className="rounded-xl bg-surface-2 px-3 py-3">
+                  <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{matched.length}</p>
+                  <p className="text-xs text-muted">continuing</p>
+                </div>
+                <div className="rounded-xl bg-surface-2 px-3 py-3">
+                  <p className="text-lg font-bold text-red-500">{willDisable}</p>
+                  <p className="text-xs text-muted">to disable</p>
+                </div>
+                <div className="rounded-xl bg-surface-2 px-3 py-3">
+                  <p className="text-lg font-bold text-foreground">{unknown.length}</p>
+                  <p className="text-xs text-muted">not in roster</p>
+                </div>
+              </div>
+              {allTorii.length === 0 && (
+                <p className="text-sm text-amber-600 dark:text-amber-400">
+                  Roster not loaded yet — open this once the student list has loaded.
+                </p>
+              )}
+              {unknown.length > 0 && (
+                <p className="text-xs text-muted">
+                  Ignored (no matching Torii in roster): <span className="font-mono">{unknown.slice(0, 12).join(", ")}{unknown.length > 12 ? "…" : ""}</span>
+                </p>
+              )}
+            </>
+          ) : (
+            <div className="rounded-xl bg-surface-2 px-4 py-4 text-sm">
+              <p className="font-semibold text-emerald-600 dark:text-emerald-400">
+                {result.reset
+                  ? `Reset — all ${result.total} students are active again.`
+                  : `Done — ${result.active} of ${result.total} students kept active, ${result.total - result.active} disabled.`}
+              </p>
+            </div>
+          )}
+        </div>
+        <div className="flex justify-between gap-2 border-t border-border px-5 py-4">
+          <Button variant="secondary" size="md" onClick={reset} disabled={busy || allTorii.length === 0}>
+            Enable everyone
+          </Button>
+          {result ? (
+            <Button size="md" onClick={onClose}>Done</Button>
+          ) : (
+            <Button size="md" onClick={apply} disabled={busy || matched.length === 0}>
+              {busy ? "Applying…" : `Apply (${matched.length} continue)`}
+            </Button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

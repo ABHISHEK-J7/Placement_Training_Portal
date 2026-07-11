@@ -4,7 +4,6 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
 import { Logo } from "@/components/layout/Logo";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { apiGet, apiPost } from "@/lib/apiClient";
@@ -15,7 +14,7 @@ const blankRatings = () => Object.fromEntries(CRITERIA.map((c) => [c.key, 0]));
 
 export function PublicFeedbackForm() {
   const params = useSearchParams();
-  // 'key' → 'classes' → 'final' → 'done'  (+ 'locked')
+  // 'key' → 'classes' → 'done'  (+ 'locked')
   const [stage, setStage] = useState("key");
 
   const [passkey, setPasskey] = useState("");
@@ -23,9 +22,8 @@ export function PublicFeedbackForm() {
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState("");
 
-  const [entries, setEntries] = useState([]); // [{ class, ratings }]
+  const [entries, setEntries] = useState([]); // [{ class, ratings, comment }]
   const [index, setIndex] = useState(0);
-  const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -46,7 +44,7 @@ export function PublicFeedbackForm() {
         setStage("locked");
         return;
       }
-      setEntries(data.classes.map((c) => ({ class: c, ratings: blankRatings() })));
+      setEntries(data.classes.map((c) => ({ class: c, ratings: blankRatings(), comment: "" })));
       setIndex(0);
       setStage("classes");
     } catch (err) {
@@ -61,31 +59,32 @@ export function PublicFeedbackForm() {
       prev.map((e, i) => (i === index ? { ...e, ratings: { ...e.ratings, [key]: v } } : e)),
     );
 
-  const nextClass = () => {
-    setError("");
-    const cur = entries[index];
-    const unrated = CRITERIA.find((c) => !cur.ratings[c.key]);
-    if (unrated) return setError(`Please rate "${unrated.label}".`);
-    if (index < entries.length - 1) setIndex(index + 1);
-    else setStage("final");
-  };
+  const setEntryComment = (v) =>
+    setEntries((prev) => prev.map((e, i) => (i === index ? { ...e, comment: v } : e)));
 
-  const submit = async (e) => {
-    e.preventDefault();
-    setError("");
-    if (!comment.trim()) return setError("A final comment is required.");
+  const submitAll = async () => {
     setSubmitting(true);
     try {
       await apiPost("/feedback", {
         code: passkey.trim(),
-        classes: entries,
-        comment: comment.trim(),
+        classes: entries.map((e) => ({ ...e, comment: e.comment.trim() })),
       });
       setStage("done");
     } catch (err) {
       setError(err.message || "Could not submit. Try again.");
       setSubmitting(false);
     }
+  };
+
+  // Validate the current class (all 5 ratings + a comment) then advance or submit.
+  const nextClass = () => {
+    setError("");
+    const cur = entries[index];
+    const unrated = CRITERIA.find((c) => !cur.ratings[c.key]);
+    if (unrated) return setError(`Please rate "${unrated.label}".`);
+    if (!cur.comment.trim()) return setError("Please add a comment for this class.");
+    if (index < entries.length - 1) setIndex(index + 1);
+    else submitAll();
   };
 
   const current = entries[index];
@@ -157,46 +156,32 @@ export function PublicFeedbackForm() {
               ))}
             </div>
 
+            {/* Mandatory per-class comment */}
+            <div className="mt-4">
+              <label className="mb-1.5 block text-sm font-medium text-foreground">
+                Your comment about this class <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={current.comment}
+                onChange={(e) => setEntryComment(e.target.value)}
+                rows={3}
+                placeholder={`Share your feedback about ${current.class}…`}
+                className="w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted focus:border-brand/50 focus:outline-none focus:ring-2 focus:ring-brand/30"
+              />
+            </div>
+
             {error && <p role="alert" className="mt-3 text-sm text-red-500">{error}</p>}
 
             <div className="mt-5 flex gap-2">
               {index > 0 && (
-                <Button variant="secondary" size="md" onClick={() => { setError(""); setIndex(index - 1); }}>
+                <Button variant="secondary" size="md" onClick={() => { setError(""); setIndex(index - 1); }} disabled={submitting}>
                   Back
                 </Button>
               )}
-              <Button size="md" className="flex-1" onClick={nextClass}>
-                {index < entries.length - 1 ? "Next class →" : "Final step →"}
+              <Button size="md" className="flex-1" onClick={nextClass} disabled={submitting}>
+                {index < entries.length - 1 ? "Next class →" : submitting ? "Submitting…" : "Submit feedback"}
               </Button>
             </div>
-          </Card>
-        )}
-
-        {/* 4. Final batch comment */}
-        {stage === "final" && (
-          <Card className="p-7">
-            <Badge tone="brand">{batch.batchName}</Badge>
-            <h1 className="mt-3 text-xl font-bold tracking-tight text-foreground">Overall batch feedback</h1>
-            <p className="mt-1 text-sm text-muted">Any final comments about the batch?</p>
-            <form onSubmit={submit} className="mt-5 space-y-4">
-              <textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                rows={5}
-                required
-                placeholder="Share your overall feedback about this batch…"
-                className="w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted focus:border-brand/50 focus:outline-none focus:ring-2 focus:ring-brand/30"
-              />
-              {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
-              <div className="flex gap-2">
-                <Button type="button" variant="secondary" size="md" onClick={() => { setError(""); setIndex(entries.length - 1); setStage("classes"); }}>
-                  Back
-                </Button>
-                <Button type="submit" size="md" className="flex-1" disabled={submitting}>
-                  {submitting ? "Submitting…" : "Submit feedback"}
-                </Button>
-              </div>
-            </form>
           </Card>
         )}
 

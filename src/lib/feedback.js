@@ -4,13 +4,16 @@ import { programs, getProgram } from "@/data/programs";
  * Class-centric trainer-feedback model.
  *
  * A passkey is generated per BATCH (training program). A student enters the
- * batch passcode, then rates EACH class of that batch on five parameters, and
- * finally leaves one overall batch comment. Submissions are anonymous.
+ * batch passcode, then rates EACH class of that batch on five parameters AND
+ * leaves a mandatory comment for that class. Submissions are anonymous.
  *
  * Submission document:
  *   { batchSlug, batchName,
- *     classes: [ { class, ratings: {…5}, rating } ],
+ *     classes: [ { class, ratings: {…5}, rating, comment } ],
  *     comment, rating, createdAt }
+ *
+ * `comment` (top level) is legacy: older records stored a single overall batch
+ * comment there. New records leave it "" and carry per-class comments instead.
  *
  * Aggregation is class-centric. All signed-in staff see all feedback.
  */
@@ -137,10 +140,7 @@ export function batchDetail(submissions, slug) {
     })
     .sort((a, b) => b.avgRating - a.avgRating);
 
-  const comments = mine
-    .filter((s) => s.comment)
-    .map((s) => ({ text: s.comment, createdAt: s.createdAt }))
-    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const comments = collectComments(mine);
 
   const allEntries = mine.flatMap((s) => s.classes || []);
   const overall = allEntries.length
@@ -188,10 +188,54 @@ export function flattenEntries(submissions) {
       class: c.class,
       rating: Number(c.rating) || 0,
       ratings: c.ratings || {},
-      comment: s.comment || "",
+      comment: c.comment || "",
       createdAt: s.createdAt,
     })),
   );
+}
+
+/**
+ * All individual comments across submissions, newest first. New records carry a
+ * comment per class; legacy records carry a single overall batch comment (shown
+ * with class "Overall"). Each row: { class, text, rating, batchName, batchSlug, createdAt }.
+ */
+export function collectComments(submissions) {
+  const out = [];
+  for (const s of submissions) {
+    let perClass = false;
+    for (const c of s.classes || []) {
+      const text = (c.comment || "").trim();
+      if (!text) continue;
+      perClass = true;
+      out.push({
+        class: c.class,
+        text,
+        rating: Number(c.rating) || 0,
+        batchName: s.batchName,
+        batchSlug: s.batchSlug,
+        createdAt: s.createdAt,
+      });
+    }
+    const overall = (s.comment || "").trim();
+    if (overall && !perClass) {
+      out.push({
+        class: "Overall",
+        text: overall,
+        rating: Number(s.rating) || 0,
+        batchName: s.batchName,
+        batchSlug: s.batchSlug,
+        createdAt: s.createdAt,
+      });
+    }
+  }
+  return out.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+/** Distinct class names present in a set of collected comments (for filters). */
+export function commentClasses(comments) {
+  const seen = [];
+  for (const c of comments) if (!seen.includes(c.class)) seen.push(c.class);
+  return seen.sort((a, b) => a.localeCompare(b));
 }
 
 /** Aggregate by class across all batches: responses + average + criteria. */

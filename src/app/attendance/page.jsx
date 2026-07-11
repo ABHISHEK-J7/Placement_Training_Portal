@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useStudentStatus } from "@/components/students/StudentStatusProvider";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -38,6 +39,7 @@ function pctTone(p) {
 
 export default function AttendancePage() {
   const { user } = useAuth();
+  const { isActive, activeOnly, setActiveOnly } = useStudentStatus();
 
   const [batches, setBatches] = useState([]);
   const [directory, setDirectory] = useState([]);
@@ -108,10 +110,16 @@ export default function AttendancePage() {
     for (const r of roster) if (r.torii) m.set((r.torii || "").trim().toUpperCase(), r);
     return m;
   }, [directory, roster]);
-  const scoped = useMemo(
-    () => (raw ? scopeAttendance(user, enrichAttendance(raw, dirMap)) : []),
-    [raw, dirMap, user],
-  );
+  const scoped = useMemo(() => {
+    if (!raw) return [];
+    const rows = scopeAttendance(user, enrichAttendance(raw, dirMap));
+    return activeOnly ? rows.filter((r) => isActive(r.torii)) : rows;
+  }, [raw, dirMap, user, activeOnly, isActive]);
+  // Inactive students hidden by the active-only filter (for the notice).
+  const hiddenInactive = useMemo(() => {
+    if (!raw || !activeOnly) return 0;
+    return scopeAttendance(user, enrichAttendance(raw, dirMap)).filter((r) => !isActive(r.torii)).length;
+  }, [raw, dirMap, user, activeOnly, isActive]);
 
   const all = user ? seesAllStudents(user) : false;
   const deptOptions = useMemo(
@@ -205,9 +213,30 @@ export default function AttendancePage() {
           <h2 className="text-2xl font-bold tracking-tight text-foreground">Attendance</h2>
           <p className="mt-1 text-sm text-muted">
             {all ? "Day-wise attendance across all departments." : `Attendance for your department (${user.department}).`}
+            {activeOnly && hiddenInactive > 0 && (
+              <span className="text-amber-600 dark:text-amber-400"> · {hiddenInactive} inactive hidden</span>
+            )}
           </p>
         </div>
-        <Badge tone="brand">{roleLabel(user.role)}</Badge>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center rounded-full border border-border p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setActiveOnly(true)}
+              className={cn("rounded-full px-3 py-1.5 font-medium transition-colors", activeOnly ? "bg-brand/10 text-brand" : "text-muted hover:text-foreground")}
+            >
+              Active only
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveOnly(false)}
+              className={cn("rounded-full px-3 py-1.5 font-medium transition-colors", !activeOnly ? "bg-brand/10 text-brand" : "text-muted hover:text-foreground")}
+            >
+              All
+            </button>
+          </div>
+          <Badge tone="brand">{roleLabel(user.role)}</Badge>
+        </div>
       </div>
 
       {/* Controls */}

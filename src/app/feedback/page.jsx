@@ -20,8 +20,10 @@ import {
   dateKey,
   dateLabel,
   distinctDates,
+  collectComments,
+  commentClasses,
 } from "@/lib/feedback";
-import { downloadFeedbackExcel } from "@/lib/feedbackExport";
+import { downloadFeedbackExcel, downloadCommentsExcel } from "@/lib/feedbackExport";
 import { canManageUsers, roleLabel } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +49,7 @@ export default function FeedbackPage() {
 
   const [batchF, setBatchF] = useState("all");
   const [dateF, setDateF] = useState("all");
+  const [commentClass, setCommentClass] = useState("all");
   const [downloading, setDownloading] = useState(false);
 
   const scoped = useMemo(() => scopeFeedback(user, records), [user, records]);
@@ -74,7 +77,12 @@ export default function FeedbackPage() {
   const classRows = useMemo(() => byClass(filtered), [filtered]);
   const dist = useMemo(() => ratingDistribution(filtered), [filtered]);
   const matrix = useMemo(() => batchClassMatrix(filtered), [filtered]);
-  const comments = useMemo(() => filtered.filter((s) => s.comment), [filtered]);
+  const comments = useMemo(() => collectComments(filtered), [filtered]);
+  const commentOptions = useMemo(() => commentClasses(comments), [comments]);
+  const shownComments = useMemo(
+    () => (commentClass === "all" ? comments : comments.filter((c) => c.class === commentClass)),
+    [comments, commentClass],
+  );
 
   if (!user) return null;
 
@@ -289,11 +297,37 @@ export default function FeedbackPage() {
 
           {/* Comments — table; ~10 rows visible, rest scrolls */}
           <Card className="overflow-hidden">
-            <div className="border-b border-border px-5 py-3.5">
-              <h3 className="text-sm font-semibold text-foreground">Comments</h3>
-              <p className="text-xs text-muted">{comments.length} overall batch comment{comments.length === 1 ? "" : "s"}</p>
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-5 py-3.5">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Comments</h3>
+                <p className="text-xs text-muted">
+                  {shownComments.length} comment{shownComments.length === 1 ? "" : "s"}
+                  {commentClass !== "all" ? ` · ${commentClass}` : ""}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <select className={FIELD} value={commentClass} onChange={(e) => setCommentClass(e.target.value)}>
+                  <option value="all">All comments</option>
+                  {commentOptions.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={shownComments.length === 0}
+                  onClick={() =>
+                    downloadCommentsExcel(
+                      shownComments,
+                      `feedback-comments${batchF !== "all" ? "-" + batchF : ""}${commentClass !== "all" ? "-" + commentClass.replace(/\s+/g, "_") : ""}${dateF !== "all" ? "-" + dateF : ""}.xlsx`,
+                    )
+                  }
+                >
+                  Download Excel
+                </Button>
+              </div>
             </div>
-            {comments.length === 0 ? (
+            {shownComments.length === 0 ? (
               <p className="px-5 py-6 text-sm text-muted">No comments in this view.</p>
             ) : (
               <div className="max-h-[30rem] overflow-auto scrollbar-thin">
@@ -301,16 +335,18 @@ export default function FeedbackPage() {
                   <thead>
                     <tr className="text-left">
                       <th className="sticky top-0 z-10 w-12 bg-surface-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted">#</th>
+                      <th className="sticky top-0 z-10 bg-surface-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted">Class</th>
                       <th className="sticky top-0 z-10 bg-surface-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted">Comment</th>
                       <th className="sticky top-0 z-10 bg-surface-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted">Batch</th>
                       <th className="sticky top-0 z-10 whitespace-nowrap bg-surface-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted">Date</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {comments.map((s, i) => (
+                    {shownComments.map((s, i) => (
                       <tr key={i} className="align-top transition-colors hover:bg-surface-2/60">
                         <td className="px-4 py-3 text-muted">{i + 1}</td>
-                        <td className="px-4 py-3 text-foreground/85">{s.comment}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-muted">{s.class}</td>
+                        <td className="px-4 py-3 text-foreground/85">{s.text}</td>
                         <td className="px-4 py-3 text-muted">{s.batchName}</td>
                         <td className="whitespace-nowrap px-4 py-3 text-muted">{dateLabel(s.createdAt)}</td>
                       </tr>

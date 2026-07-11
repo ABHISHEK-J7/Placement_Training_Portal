@@ -10,8 +10,12 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Stars } from "@/components/ui/Stars";
 import { StatCard } from "@/components/dashboard/charts";
-import { batchDetail, scopeFeedback, distinctDates, dateKey, dateLabel } from "@/lib/feedback";
+import { batchDetail, scopeFeedback, distinctDates, dateKey, dateLabel, commentClasses } from "@/lib/feedback";
+import { downloadBatchDetailExcel, downloadCommentsExcel } from "@/lib/feedbackExport";
 import { cn } from "@/lib/utils";
+
+const SELECT =
+  "h-9 rounded-full border border-border bg-surface px-3 text-sm text-foreground focus:border-brand/50 focus:outline-none focus:ring-2 focus:ring-brand/30";
 
 function ratingTone(v) {
   if (v >= 4) return "text-emerald-600 dark:text-emerald-400";
@@ -25,6 +29,7 @@ export default function BatchFeedbackPage() {
   const { user } = useAuth();
   const { records, ready } = useFeedback();
   const [dateF, setDateF] = useState("all");
+  const [commentClass, setCommentClass] = useState("all");
 
   const batchSubs = useMemo(
     () => scopeFeedback(user, records).filter((s) => s.batchSlug === slug),
@@ -36,6 +41,11 @@ export default function BatchFeedbackPage() {
     [batchSubs, dateF],
   );
   const detail = useMemo(() => batchDetail(filtered, slug), [filtered, slug]);
+  const commentOptions = useMemo(() => commentClasses(detail.comments), [detail.comments]);
+  const shownComments = useMemo(
+    () => (commentClass === "all" ? detail.comments : detail.comments.filter((c) => c.class === commentClass)),
+    [detail.comments, commentClass],
+  );
 
   if (!user) return null;
 
@@ -57,7 +67,7 @@ export default function BatchFeedbackPage() {
     <div className="mx-auto max-w-7xl space-y-6">
       <div>
         <Link href="/feedback" className="text-sm text-muted hover:text-brand">← Feedback</Link>
-        <div className="mt-2 flex flex-wrap items-center gap-3">
+        <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-2xl font-bold tracking-tight text-foreground">{detail.name}</h2>
             <div className="mt-1 flex items-center gap-2 text-sm text-muted">
@@ -66,6 +76,18 @@ export default function BatchFeedbackPage() {
               <span>· {detail.responses} responses</span>
             </div>
           </div>
+          <Button
+            size="sm"
+            onClick={() =>
+              downloadBatchDetailExcel({
+                detail,
+                submissions: filtered,
+                filename: `feedback-${slug}${dateF !== "all" ? "-" + dateF : ""}.xlsx`,
+              })
+            }
+          >
+            ⬇ Download Excel
+          </Button>
         </div>
       </div>
 
@@ -136,23 +158,61 @@ export default function BatchFeedbackPage() {
         ))}
       </div>
 
-      {/* Overall batch comments */}
+      {/* Class comments — filter by class, download what's shown */}
       <Card className="overflow-hidden">
-        <div className="border-b border-border px-5 py-3.5">
-          <h3 className="text-sm font-semibold text-foreground">Overall batch comments</h3>
-          <p className="text-xs text-muted">{detail.comments.length} comment{detail.comments.length === 1 ? "" : "s"}</p>
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-5 py-3.5">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Class comments</h3>
+            <p className="text-xs text-muted">
+              {shownComments.length} comment{shownComments.length === 1 ? "" : "s"}
+              {commentClass !== "all" ? ` · ${commentClass}` : ""}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <select className={SELECT} value={commentClass} onChange={(e) => setCommentClass(e.target.value)}>
+              <option value="all">All classes</option>
+              {commentOptions.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={shownComments.length === 0}
+              onClick={() =>
+                downloadCommentsExcel(
+                  shownComments,
+                  `feedback-${slug}-comments${commentClass !== "all" ? "-" + commentClass.replace(/\s+/g, "_") : ""}.xlsx`,
+                )
+              }
+            >
+              ⬇ Download
+            </Button>
+          </div>
         </div>
-        {detail.comments.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-muted">No comments yet.</p>
+        {shownComments.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-muted">No comments {commentClass !== "all" ? `for ${commentClass}` : "yet"}.</p>
         ) : (
-          <ul className="divide-y divide-border">
-            {detail.comments.map((c, i) => (
-              <li key={i} className="px-5 py-3.5">
-                <p className="text-sm text-foreground/85">{c.text}</p>
-                {c.createdAt && <p className="mt-0.5 text-xs text-muted">{dateLabel(c.createdAt)}</p>}
-              </li>
-            ))}
-          </ul>
+          <div className="max-h-[30rem] overflow-auto scrollbar-thin">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="text-left">
+                  <th className="sticky top-0 z-10 bg-surface-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted">Class</th>
+                  <th className="sticky top-0 z-10 bg-surface-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted">Comment</th>
+                  <th className="sticky top-0 z-10 whitespace-nowrap bg-surface-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {shownComments.map((c, i) => (
+                  <tr key={i} className="align-top transition-colors hover:bg-surface-2/60">
+                    <td className="whitespace-nowrap px-4 py-3 text-muted">{c.class}</td>
+                    <td className="px-4 py-3 text-foreground/85">{c.text}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-muted">{c.createdAt ? dateLabel(c.createdAt) : ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
     </div>

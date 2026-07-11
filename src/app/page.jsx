@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useFeedback } from "@/components/feedback/FeedbackProvider";
+import { useStudentStatus } from "@/components/students/StudentStatusProvider";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Stars } from "@/components/ui/Stars";
-import { StatCard, DonutChart, BarList } from "@/components/dashboard/charts";
+import { DonutChart, BarList, SectionTitle, Gauge, MetricTile, RankBars, TrendArea } from "@/components/dashboard/charts";
 import { apiGet, apiPost } from "@/lib/apiClient";
 import {
   directoryMap,
@@ -15,6 +16,7 @@ import {
   scopeAttendance,
   attendanceOverview,
   attendanceByDepartment,
+  byDate,
 } from "@/lib/attendanceData";
 import { feedbackOverview, scopeFeedback } from "@/lib/feedback";
 import { seesAllStudents, roleLabel, canManageUsers, sameDept } from "@/lib/roles";
@@ -59,8 +61,9 @@ function cellTone(v, kind) {
 }
 
 export default function DashboardPage() {
-  const { user, users } = useAuth();
+  const { user } = useAuth();
   const { records } = useFeedback();
+  const { isActive, activeOnly, setActiveOnly } = useStudentStatus();
 
   const [directory, setDirectory] = useState([]);
   const [attRows, setAttRows] = useState(null);
@@ -109,20 +112,29 @@ export default function DashboardPage() {
 
   const all = user ? seesAllStudents(user) : false;
 
-  const students = useMemo(() => {
+  const scopedStudents = useMemo(() => {
     if (!user) return [];
     return all ? directory : directory.filter((s) => sameDept(s.department, user.department));
   }, [directory, user, all]);
+  const students = useMemo(
+    () => (activeOnly ? scopedStudents.filter((s) => isActive(s.torii)) : scopedStudents),
+    [scopedStudents, activeOnly, isActive],
+  );
+  // Active headcount within a batch's roster (uses the live rolls list).
+  const batchCount = useMemo(
+    () => (b) => (activeOnly ? (b.rolls || []).reduce((n, t) => n + (isActive(t) ? 1 : 0), 0) : (b.studentCount || 0)),
+    [activeOnly, isActive],
+  );
 
   const deptGroups = useMemo(() => groupCount(students, (s) => s.department), [students]);
   // All-access batch counts come from the live/persisted API roster; HOD from the directory.
   const byBatch = useMemo(() => {
-    if (all && apiBatches.length) return apiBatches.map((b) => [b.name, b.studentCount || 0]).sort((a, c) => c[1] - a[1]);
+    if (all && apiBatches.length) return apiBatches.map((b) => [b.name, batchCount(b)]).sort((a, c) => c[1] - a[1]);
     return groupCount(students, (s) => s.batch);
-  }, [all, apiBatches, students]);
+  }, [all, apiBatches, students, batchCount]);
   const totalStudents = useMemo(
-    () => (all && apiBatches.length ? apiBatches.reduce((s, b) => s + (b.studentCount || 0), 0) : students.length),
-    [all, apiBatches, students],
+    () => (all && apiBatches.length ? apiBatches.reduce((s, b) => s + batchCount(b), 0) : students.length),
+    [all, apiBatches, students, batchCount],
   );
   // Students-by-department totals the live roster: roster students not yet in the
   // directory (no department) fall into "Unknown" so the chart sums to the headcount.
@@ -146,7 +158,11 @@ export default function DashboardPage() {
     return { depts: depts.sort(), batches: batches.sort(), get: (d, b) => cells.get(`${d}||${b}`) || 0 };
   }, [students]);
 
-  const att = useMemo(() => (attRows ? scopeAttendance(user, attRows) : []), [attRows, user]);
+  const att = useMemo(() => {
+    if (!attRows) return [];
+    const scoped = scopeAttendance(user, attRows);
+    return activeOnly ? scoped.filter((r) => isActive(r.torii)) : scoped;
+  }, [attRows, user, activeOnly, isActive]);
   const attOv = useMemo(() => attendanceOverview(att), [att]);
   const attByDept = useMemo(() => attendanceByDepartment(att), [att]);
   const attByBatch = useMemo(() => {
@@ -177,10 +193,17 @@ export default function DashboardPage() {
   const asmtTechCount = useMemo(() => new Set(asmtAll.map((a) => a.technology)).size, [asmtAll]);
   const asmtQuestions = useMemo(() => asmtAll.reduce((s, a) => s + (a.questions || 0), 0), [asmtAll]);
 
+  // Attendance trend + risk (across all scoped/active rows).
+  const attTrend = useMemo(() => byDate(att).map((d) => [d.date, d.percent]), [att]);
+  const trackedWithData = useMemo(() => att.filter((r) => r.total > 0).length, [att]);
+  const atRisk = useMemo(() => att.filter((r) => r.total > 0 && r.percent < 50).length, [att]);
+  const onTrackPct = trackedWithData ? Math.round(((trackedWithData - atRisk) / trackedWithData) * 100) : 0;
+  const attDist = useMemo(() => attBuckets(att), [att]);
+
   if (!user) return null;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8">
+    <div className="mx-auto max-w-7xl space-y-10">
       {/* Welcome */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -190,20 +213,25 @@ export default function DashboardPage() {
             {user.department ? ` · ${user.department}` : " · all departments"} — here&apos;s your overview.
           </p>
         </div>
-        <Badge tone="brand">{all ? "All departments" : user.department}</Badge>
-      </div>
-
-      {/* Top KPIs */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Students" value={totalStudents} hint={all ? "Live roster" : `In ${user.department}`} icon={<Icon d={icon.users} />} />
-        <StatCard label="Departments" value={deptGroups.length} hint="Represented" icon={<Icon d={icon.building} />} />
-        <StatCard label="Batches" value={byBatch.length} hint="Placement cohorts" icon={<Icon d={icon.batches} />} />
-        <StatCard
-          label={canManageUsers(user) ? "Portal Users" : "Feedback"}
-          value={canManageUsers(user) ? users.length : fbOv.responses}
-          hint={canManageUsers(user) ? "Staff accounts" : "Responses"}
-          icon={<Icon d={canManageUsers(user) ? icon.users : icon.chat} />}
-        />
+        <div className="flex items-center gap-2">
+          <div className="flex items-center rounded-full border border-border p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setActiveOnly(true)}
+              className={cn("rounded-full px-3 py-1.5 font-medium transition-colors", activeOnly ? "bg-brand/10 text-brand" : "text-muted hover:text-foreground")}
+            >
+              Active only
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveOnly(false)}
+              className={cn("rounded-full px-3 py-1.5 font-medium transition-colors", !activeOnly ? "bg-brand/10 text-brand" : "text-muted hover:text-foreground")}
+            >
+              All
+            </button>
+          </div>
+          <Badge tone="brand">{all ? "All departments" : user.department}</Badge>
+        </div>
       </div>
 
       {students.length === 0 ? (
@@ -222,12 +250,39 @@ export default function DashboardPage() {
         </Card>
       ) : (
         <>
+          {/* Overview */}
+          <section className="space-y-4">
+            <SectionTitle
+              title="Portal overview"
+              description={`A live snapshot of the placement-training programme${activeOnly ? " — continuing students only" : ""}. Use the toggle above to include everyone.`}
+            />
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <MetricTile label="Students" value={totalStudents} hint={activeOnly ? "Continuing" : all ? "On roster" : `In ${user.department}`} accent="brand" icon={<Icon d={icon.users} />} />
+              <MetricTile label="Departments" value={deptGroups.length} hint="Represented" accent="sky" icon={<Icon d={icon.building} />} />
+              <MetricTile label="Batches" value={byBatch.length} hint="Placement cohorts" accent="violet" icon={<Icon d={icon.batches} />} />
+              <MetricTile label="Assessments" value={asmtAll.length} hint={`${dailyIn.length} daily · ${grandIn.length} grand`} accent="emerald" icon={<Icon d={icon.check} />} />
+            </div>
+          </section>
+
+          {/* Performance snapshot */}
+          {(att.length > 0 || fb.length > 0) && (
+            <section className="space-y-4">
+              <SectionTitle title="Performance snapshot" description="The headline health metrics at a glance — attendance turnout and trainer feedback." />
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {att.length > 0 && <Gauge value={attOv.overallPercent} label="Overall attendance" hint="All sessions" />}
+                {att.length > 0 && <Gauge value={attOv.avgPercent} label="Avg per student" hint="Mean attendance" />}
+                {att.length > 0 && <Gauge value={onTrackPct} tone="emerald" label="On track" hint="At or above 50%" />}
+                {fb.length > 0 && <Gauge value={Number(fbOv.avgRating.toFixed(1))} max={5} suffix="/5" tone="brand" label="Trainer rating" hint={`${fbOv.responses} responses`} />}
+              </div>
+            </section>
+          )}
+
           {/* Students */}
           <section className="space-y-4">
-            <h3 className="text-lg font-semibold text-foreground">Students</h3>
+            <SectionTitle title="Students" description="How the cohort is distributed across departments and batches." />
             <div className="grid gap-4 lg:grid-cols-2">
-              <DonutChart title="Students by Department" data={byDept} />
-              <BarList title="Students by Batch" data={byBatch} />
+              <DonutChart title="Students by department" description="Share of the cohort in each department." data={byDept} />
+              <RankBars title="Students by batch" description="Headcount in each placement batch." data={byBatch} />
             </div>
 
             {matrix.batches.length > 0 && (
@@ -274,10 +329,11 @@ export default function DashboardPage() {
 
           {/* Attendance */}
           <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-foreground">Attendance</h3>
-              <Button href="/attendance" variant="secondary" size="sm">Open attendance →</Button>
-            </div>
+            <SectionTitle
+              title="Attendance"
+              description="Day-by-day turnout across sessions. Anyone below 50% overall is flagged as at-risk."
+              action={<Button href="/attendance" variant="secondary" size="sm">Open attendance →</Button>}
+            />
             {attLoading ? (
               <Card className="grid place-items-center py-12">
                 <div className="h-7 w-7 animate-spin rounded-full border-2 border-border border-t-brand" />
@@ -288,43 +344,43 @@ export default function DashboardPage() {
               </Card>
             ) : (
               <>
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <StatCard label="Overall %" value={`${attOv.overallPercent}%`} hint="All sessions" icon={<Icon d={icon.check} />} />
-                  <StatCard label="Avg Student %" value={`${attOv.avgPercent}%`} hint="Mean per student" />
-                  <StatCard label="Tracked" value={attOv.students} hint="Students" />
-                  <StatCard label="Sessions" value={attOv.total} hint={`${attOv.present} present · ${attOv.absent} absent`} />
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <MetricTile label="Tracked" value={attOv.students} hint="Students with records" accent="sky" />
+                  <MetricTile label="At risk" value={atRisk} hint="Below 50% attendance" accent="rose" />
+                  <MetricTile label="Working days" value={attTrend.length} hint="Distinct session dates" accent="violet" />
                 </div>
+                <TrendArea title="Attendance % by day" description="Average attendance for every working day so far." data={attTrend} />
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <BarList title="Attendance % by batch" data={attByBatch} />
-                  {all && attByDept.length > 1 ? (
-                    <BarList title="Attendance % by department" data={attByDept.map((d) => [d.department, d.percent])} />
-                  ) : (
-                    <DonutChart title="Attendance distribution" data={attBuckets(att)} />
-                  )}
+                  <DonutChart title="Attendance distribution" description="Students grouped by their overall attendance %." data={attDist} />
+                  <RankBars title="Attendance % by batch" description="Average attendance in each batch." data={attByBatch} unit="%" />
                 </div>
+                {all && attByDept.length > 1 && (
+                  <RankBars title="Attendance % by department" description="Turnout ranked by department." data={attByDept.map((d) => [d.department, d.percent])} unit="%" />
+                )}
               </>
             )}
           </section>
 
           {/* Assessments */}
           <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-foreground">Assessments</h3>
-              <Button href="/assessments" variant="secondary" size="sm">Open assessments →</Button>
-            </div>
+            <SectionTitle
+              title="Assessments"
+              description="Aptitude, coding and communication tests published to the placement batches."
+              action={<Button href="/assessments" variant="secondary" size="sm">Open assessments →</Button>}
+            />
             {asmtAll.length === 0 ? (
               <Card className="px-6 py-10 text-center text-sm text-muted">No assessments published for these batches yet.</Card>
             ) : (
               <>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <StatCard label="Daily Tests" value={dailyIn.length} hint="Placement batches" icon={<Icon d={icon.check} />} />
-                  <StatCard label="Grand Tests" value={grandIn.length} hint="Comprehensive" />
-                  <StatCard label="Technologies" value={asmtTechCount} hint="Covered" />
-                  <StatCard label="Questions" value={asmtQuestions} hint="Total set" />
+                  <MetricTile label="Daily tests" value={dailyIn.length} hint="Regular practice" accent="emerald" icon={<Icon d={icon.check} />} />
+                  <MetricTile label="Grand tests" value={grandIn.length} hint="Comprehensive" accent="brand" />
+                  <MetricTile label="Technologies" value={asmtTechCount} hint="Skill areas covered" accent="indigo" />
+                  <MetricTile label="Questions" value={asmtQuestions} hint="Total set" accent="amber" />
                 </div>
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <BarList title="Assessments by batch" data={asmtByBatch} />
-                  <DonutChart title="Assessments by technology" data={asmtByTech} />
+                  <RankBars title="Assessments by batch" description="How many tests each batch has been set." data={asmtByBatch} />
+                  <DonutChart title="Assessments by technology" description="Spread of tests across skill areas." data={asmtByTech} />
                 </div>
               </>
             )}
@@ -332,22 +388,23 @@ export default function DashboardPage() {
 
           {/* Feedback */}
           <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-foreground">Feedback</h3>
-              <Button href="/feedback" variant="secondary" size="sm">Open feedback →</Button>
-            </div>
+            <SectionTitle
+              title="Feedback"
+              description="Anonymous student feedback on trainers and classes, rated out of 5."
+              action={<Button href="/feedback" variant="secondary" size="sm">Open feedback →</Button>}
+            />
             {fb.length === 0 ? (
               <Card className="px-6 py-10 text-center text-sm text-muted">No feedback submitted yet.</Card>
             ) : (
               <>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <StatCard label="Responses" value={fbOv.responses} hint="Submissions" icon={<Icon d={icon.chat} />} />
-                  <StatCard label="Avg Rating" value={`${fbOv.avgRating.toFixed(1)}/5`} hint="All parameters" />
-                  <StatCard label="Batches" value={fbOv.batches} hint="Rated" />
-                  <StatCard label="Classes" value={fbOv.classes} hint="Rated" />
+                  <MetricTile label="Responses" value={fbOv.responses} hint="Student submissions" accent="sky" icon={<Icon d={icon.chat} />} />
+                  <MetricTile label="Avg rating" value={`${fbOv.avgRating.toFixed(1)}/5`} hint="All parameters" accent="brand" />
+                  <MetricTile label="Batches" value={fbOv.batches} hint="Rated" accent="violet" />
+                  <MetricTile label="Classes" value={fbOv.classes} hint="Rated" accent="emerald" />
                 </div>
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <BarList title="Average by parameter" data={fbOv.criteria.map((c) => [c.label, Math.round(c.avg * 10) / 10])} />
+                  <BarList title="Average by parameter" description="Mean score for each feedback parameter (out of 5)." data={fbOv.criteria.map((c) => [c.label, Math.round(c.avg * 10) / 10])} />
                   <Card className="flex flex-col justify-center p-5">
                     <p className="text-sm font-medium text-muted">Overall rating</p>
                     <div className="mt-2 flex items-center gap-3">

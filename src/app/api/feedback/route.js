@@ -18,7 +18,8 @@ export async function GET() {
 
 /**
  * Public: submit one batch feedback (passkey-gated, anonymous).
- * body = { code, classes: [{ class, ratings:{…5} }], comment }
+ * body = { code, classes: [{ class, ratings:{…5}, comment }] }
+ * Each class carries its own mandatory comment.
  */
 export async function POST(request) {
   let body;
@@ -36,14 +37,10 @@ export async function POST(request) {
   }
 
   const code = (body.code || "").trim().toUpperCase();
-  const comment = (body.comment || "").trim();
   const incomingClasses = Array.isArray(body.classes) ? body.classes : [];
 
   if (!code) {
     return NextResponse.json({ ok: false, error: "Missing passkey." }, { status: 400 });
-  }
-  if (!comment) {
-    return NextResponse.json({ ok: false, error: "A final comment is required." }, { status: 400 });
   }
 
   try {
@@ -76,8 +73,15 @@ export async function POST(request) {
         }
         ratings[crit.key] = v;
       }
+      const classComment = (c.comment || "").trim();
+      if (!classComment) {
+        return NextResponse.json(
+          { ok: false, error: `Add a comment for ${className}.` },
+          { status: 400 },
+        );
+      }
       const rating = CRITERIA.reduce((s, crit) => s + ratings[crit.key], 0) / CRITERIA.length;
-      classes.push({ class: className, ratings, rating });
+      classes.push({ class: className, ratings, rating, comment: classComment });
     }
 
     const overall = classes.reduce((s, c) => s + c.rating, 0) / classes.length;
@@ -87,7 +91,7 @@ export async function POST(request) {
       batchSlug: pk.batchSlug,
       batchName: pk.batchName,
       classes,
-      comment,
+      comment: "", // comments are now per-class (see classes[].comment)
       rating: overall,
       code,
       createdAt: Date.now(),

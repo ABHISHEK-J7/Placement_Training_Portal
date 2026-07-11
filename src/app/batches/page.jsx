@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useStudentStatus } from "@/components/students/StudentStatusProvider";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { StatCard } from "@/components/dashboard/charts";
@@ -28,6 +29,7 @@ function attTone(p) {
 
 export default function BatchesPage() {
   const { user } = useAuth();
+  const { isActive, activeOnly, setActiveOnly } = useStudentStatus();
 
   const [batches, setBatches] = useState([]); // authoritative list from get-batches
   const [directory, setDirectory] = useState([]);
@@ -66,14 +68,21 @@ export default function BatchesPage() {
     if (!user) return [];
     return batches
       .map((b) => {
-        const dirStudents = directory.filter((s) => s.batch === b.name && (all || sameDept(s.department, user.department)));
+        const dirStudents = directory.filter(
+          (s) => s.batch === b.name && (all || sameDept(s.department, user.department)) && (!activeOnly || isActive(s.torii)),
+        );
         const dm = new Map();
         for (const s of dirStudents) dm.set(s.department || "—", (dm.get(s.department || "—") || 0) + 1);
         const depts = [...dm.entries()].sort((a, c) => c[1] - a[1]);
-        // All-access counts come from the live/persisted API roster (studentCount);
-        // an HOD sees their department's directory count.
-        const count = all ? b.studentCount || 0 : dirStudents.length;
-        const attRows = scopeAttendance(user, enrichAttendance(attByBatch[b.name] || [], dirMap));
+        // All-access counts come from the live/persisted API roster (active rolls
+        // when the active-only filter is on); an HOD sees their department's count.
+        const count = all
+          ? activeOnly
+            ? (b.rolls || []).reduce((n, t) => n + (isActive(t) ? 1 : 0), 0)
+            : b.studentCount || 0
+          : dirStudents.length;
+        let attRows = scopeAttendance(user, enrichAttendance(attByBatch[b.name] || [], dirMap));
+        if (activeOnly) attRows = attRows.filter((r) => isActive(r.torii));
         const ov = attendanceOverview(attRows);
         const dailyCount = daily.filter((a) => a.batchList?.includes(b.name)).length;
         const grandCount = grand.filter((a) => a.batchList?.includes(b.name)).length;
@@ -84,7 +93,7 @@ export default function BatchesPage() {
       })
       .filter((c) => all || c.count > 0 || c.depts.length > 0) // HOD: only batches with their students
       .sort((a, c) => c.count - a.count);
-  }, [batches, directory, all, user, attByBatch, dirMap, daily, grand]);
+  }, [batches, directory, all, user, attByBatch, dirMap, daily, grand, activeOnly, isActive]);
 
   const summary = useMemo(() => {
     let present = 0, total = 0;
@@ -103,9 +112,28 @@ export default function BatchesPage() {
           <h2 className="text-2xl font-bold tracking-tight text-foreground">Batches</h2>
           <p className="mt-1 text-sm text-muted">
             {all ? "Live placement batches — students, attendance and assessments." : `Your department's students by batch (${user.department}).`}
+            {activeOnly ? " Showing continuing students only." : ""}
           </p>
         </div>
-        <Badge tone="brand">{all ? roleLabel(user.role) : user.department}</Badge>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center rounded-full border border-border p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setActiveOnly(true)}
+              className={cn("rounded-full px-3 py-1.5 font-medium transition-colors", activeOnly ? "bg-brand/10 text-brand" : "text-muted hover:text-foreground")}
+            >
+              Active only
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveOnly(false)}
+              className={cn("rounded-full px-3 py-1.5 font-medium transition-colors", !activeOnly ? "bg-brand/10 text-brand" : "text-muted hover:text-foreground")}
+            >
+              All
+            </button>
+          </div>
+          <Badge tone="brand">{all ? roleLabel(user.role) : user.department}</Badge>
+        </div>
       </div>
 
       {!loaded ? (
